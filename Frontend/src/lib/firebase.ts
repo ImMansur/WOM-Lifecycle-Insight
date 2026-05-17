@@ -12,6 +12,12 @@ const firebaseConfig = {
   measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
 };
 
+if (!firebaseConfig.apiKey) {
+  throw new Error(
+    "Firebase is not configured. Set VITE_FIREBASE_API_KEY and other VITE_FIREBASE_* environment variables."
+  );
+}
+
 export const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);

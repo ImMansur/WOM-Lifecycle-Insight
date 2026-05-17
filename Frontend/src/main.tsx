@@ -3,11 +3,18 @@ import { createRoot } from "react-dom/client";
 import { RouterProvider } from "@tanstack/react-router";
 import { getRouter } from "./router";
 
-const router = getRouter();
-
 const rootElement = document.getElementById("root")!;
-createRoot(rootElement).render(
-  <StrictMode>
-    <RouterProvider router={router} />
-  </StrictMode>,
-);
+
+try {
+  const router = getRouter();
+  createRoot(rootElement).render(
+    <StrictMode>
+      <RouterProvider router={router} />
+    </StrictMode>,
+  );
+} catch (err) {
+  rootElement.innerHTML = `<div style="font-family:sans-serif;padding:2rem;color:#c00">
+    <h2>App failed to start</h2>
+    <pre style="white-space:pre-wrap">${err instanceof Error ? err.message : String(err)}</pre>
+  </div>`;
+}
