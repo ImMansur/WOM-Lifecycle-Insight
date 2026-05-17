@@ -1,6 +1,6 @@
 import type { Recommendation } from "./wom-data";
 
-const BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
+const BASE = import.meta.env.VITE_API_URL ?? "";
 
 export interface Summary {
   inputFolder: string;
