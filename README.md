@@ -1,158 +1,252 @@
 # WOM Lifecycle Insight
 
-Processes Certificates of Conformance (PDF / DOC / DOCX) through **Azure Document Intelligence** and **Azure OpenAI GPT-4.1** to generate proactive lifecycle and recertification recommendations.
+![License](https://img.shields.io/badge/license-MIT-blue.svg)
+![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white)
+![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)
+![Vercel](https://img.shields.io/badge/Deploy-Vercel-black?logo=vercel&logoColor=white)
+
+An intelligent document processing platform for **Worldwide Oilfield Machine (WOM)**. Ingests Certificates of Conformance (PDF / DOC / DOCX), extracts structured equipment data using AI, and generates proactive lifecycle and recertification recommendations — surfaced through a real-time operations dashboard.
 
 ---
 
-## Project structure
+## Features
+
+- **Document Intelligence** — Multi-modal OCR extraction from scanned and digital certificates
+- **AI Structured Extraction** — Automatically identifies customer, equipment, part numbers, serials, and certificate dates
+- **Lifecycle Engine** — Applies 5-year recertification rules to compute status, priority, and urgency
+- **Real-time Dashboard** — Live analytics, status distribution charts, and filterable recommendation table
+- **Action Center** — Track and manage recertification tickets with AI-suggested actions
+- **Secure Auth** — Firebase Authentication with role-based access control
+- **Cloud Ready** — Deployable to Vercel (frontend + backend as separate projects)
+
+---
+
+## Tech Stack
+
+### Frontend
+| Technology | Version | Purpose |
+|------------|---------|----------|
+| React | 18 | UI framework |
+| TypeScript | 5 | Type-safe JavaScript |
+| Vite | 6 | Build tool & dev server |
+| TanStack Router | 1.x | File-based routing with type safety |
+| TanStack Query | 5.x | Server state management & caching |
+| Tailwind CSS | 4 | Utility-first styling |
+| shadcn/ui | latest | Accessible Radix UI component library |
+| Recharts | 2.x | Charting & data visualisation |
+| React Hook Form | 7 | Form state management |
+| Lucide React | latest | Icon library |
+| Firebase SDK | 11 | Authentication & Firestore client |
+
+### Backend
+| Technology | Version | Purpose |
+|------------|---------|----------|
+| Python | 3.11+ | Runtime |
+| FastAPI | 0.115 | REST API framework |
+| Pydantic | v2 | Data validation & serialisation |
+| Firebase Admin SDK | 6.6 | Firestore server-side access |
+| python-multipart | 0.0.12 | Multipart file upload handling |
+| python-dotenv | 1.0 | Environment variable loading |
+| aiofiles | 24.x | Async file I/O |
+| httpx | 0.27 | Async HTTP client |
+
+### AI & Cloud Services
+| Service | Purpose |
+|---------|----------|
+| Document Intelligence | Multi-modal OCR — extracts text from scanned and digital PDFs |
+| AI Language Engine | Structured extraction of equipment metadata from raw text |
+| Cloud Firestore | NoSQL real-time database for recommendations and actions |
+| Firebase Authentication | Secure email/password auth with role-based access |
+
+### Infrastructure & Deployment
+| Technology | Purpose |
+|------------|----------|
+| Vercel | Frontend hosting (static Vite SPA) |
+| Vercel Serverless | Backend hosting (Python ASGI functions) |
+
+---
+
+## Project Structure
 
 ```
-frontend/
-├── backend/               ← FastAPI (Python)
-│   ├── main.py
-│   ├── models.py
-│   ├── store.py
+.
+├── backend/                        ← FastAPI (Python)
+│   ├── main.py                     # App entry point
+│   ├── models.py                   # Pydantic models
+│   ├── store.py                    # Firestore data layer
 │   ├── requirements.txt
-│   ├── .env
+│   ├── vercel.json                 # Backend Vercel config
+│   ├── api/
+│   │   └── index.py               # Vercel serverless entry
 │   ├── routers/
-│   │   ├── ingest.py
-│   │   └── recommendations.py
+│   │   ├── ingest.py              # File upload & processing
+│   │   ├── recommendations.py     # Lifecycle recommendations
+│   │   └── actions.py             # Action center
 │   └── services/
 │       ├── document_intelligence.py
 │       └── openai_service.py
-└── lifecycle-insight/     ← React + Vite + TanStack (TypeScript)
+│
+└── Frontend/                       ← React + Vite + TanStack (TypeScript)
     ├── src/
-    ├── .env
+    │   ├── routes/                # Pages (dashboard, upload, login, etc.)
+    │   ├── components/            # UI components
+    │   └── lib/                   # API client, auth, utilities
+    ├── vercel.json                # Frontend Vercel config
     └── package.json
 ```
 
 ---
 
-## Requirements
+## Prerequisites
 
-| Tool | Minimum version |
-|------|----------------|
+| Tool | Version |
+|------|---------|
 | Python | 3.11+ |
 | Node.js | 18+ |
-| Bun *(optional, faster installs)* | 1.x |
+| npm / Bun | latest |
 
 ---
 
-## 1 — Backend (FastAPI)
+## Local Development
 
-### Install
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/ImMansur/WOM-Lifecycle-Insight.git
+cd WOM-Lifecycle-Insight
+```
+
+### 2. Backend setup
 
 ```bash
 cd backend
 
-# create a virtual environment
+# Create and activate virtual environment
 python -m venv .venv
 
-# activate it
 # Windows
 .venv\Scripts\activate
 # macOS / Linux
 source .venv/bin/activate
 
-# install dependencies
+# Install dependencies
 pip install -r requirements.txt
 ```
 
-### Environment variables
+Create a `.env` file in `backend/` using `.env.example` as a reference:
 
-The `.env` file is already populated with your Azure keys:
-
-```
-DOCUMENT_INTELLIGENCE_ENDPOINT=https://ocr-ey.cognitiveservices.azure.com/
-DOCUMENT_INTELLIGENCE_KEY=...
+```env
+DOCUMENT_INTELLIGENCE_ENDPOINT=https://<resource>.cognitiveservices.azure.com/
+DOCUMENT_INTELLIGENCE_KEY=<your-key>
 DI_MODEL_ID=prebuilt-layout
 
-AZURE_OPENAI_ENDPOINT=https://ruthv-mk14bf4j-eastus2.openai.azure.com/
-AZURE_OPENAI_KEY=...
+AZURE_OPENAI_ENDPOINT=https://<resource>.openai.azure.com/
+AZURE_OPENAI_KEY=<your-key>
 AZURE_OPENAI_DEPLOYMENT=gpt-4.1
 AZURE_OPENAI_API_VERSION=2024-02-15-preview
+
+FIREBASE_SERVICE_ACCOUNT_JSON=<json-string>
 ```
 
-### Run
+Start the backend:
 
 ```bash
 uvicorn main:app --reload --port 8000
 ```
 
-Interactive API docs → http://localhost:8000/docs
+API docs → http://localhost:8000/docs
 
 ---
 
-## 2 — Frontend (React + Vite)
-
-### Install
+### 3. Frontend setup
 
 ```bash
-cd lifecycle-insight
+cd Frontend
 npm install
-# or if you use Bun:
-bun install
 ```
 
-### Environment variables
+Create a `.env` file in `Frontend/` using `.env.example` as a reference:
 
-`lifecycle-insight/.env` is already set:
-
-```
+```env
 VITE_API_URL=http://localhost:8000
+
+VITE_FIREBASE_API_KEY=
+VITE_FIREBASE_AUTH_DOMAIN=
+VITE_FIREBASE_PROJECT_ID=
+VITE_FIREBASE_STORAGE_BUCKET=
+VITE_FIREBASE_MESSAGING_SENDER_ID=
+VITE_FIREBASE_APP_ID=
 ```
 
-### Run
+Start the frontend:
 
 ```bash
 npm run dev
-# or
-bun run dev
 ```
 
 App → http://localhost:5173
 
 ---
 
-## Running both at the same time
+### 4. Run both together
 
-Open **two terminals**:
+Open two terminals:
 
-**Terminal 1 — backend**
 ```bash
-cd backend
-.venv\Scripts\activate
-uvicorn main:app --reload --port 8000
-```
+# Terminal 1 — Backend
+cd backend && .venv\Scripts\activate && uvicorn main:app --reload --port 8000
 
-**Terminal 2 — frontend**
-```bash
-cd lifecycle-insight
-npm run dev
+# Terminal 2 — Frontend
+cd Frontend && npm run dev
 ```
-
-Then open http://localhost:5173 in your browser.
 
 ---
 
-## How it works
+## Deployment (Vercel)
 
-1. Click **Ingest** in the top-right corner of the app.
-2. Drop or select one or more **PDF / DOC / DOCX** Certificate of Conformance files.
-3. Click **Process files**.
-4. The backend:
-   - Extracts text with **Azure Document Intelligence** (OCR for scanned PDFs).
-   - Sends the text to **GPT-4.1** which pulls out customer, sales order, equipment, part numbers, serials, and certificate date.
-   - Applies a **5-year recertification rule** to compute lifecycle status and priority.
-5. Results appear instantly in the dashboard table.
+Deploy as two separate Vercel projects:
+
+| Project | Root Directory | Config |
+|---------|---------------|--------|
+| **Frontend** | `Frontend/` | `Frontend/vercel.json` |
+| **Backend** | `backend/` | `backend/vercel.json` |
+
+Set all environment variables from the `.env.example` files in each project's Vercel dashboard. Set `VITE_API_URL` on the frontend to the deployed backend Vercel URL.
 
 ---
 
-## API endpoints
+## API Reference
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/api/recommendations` | All stored recommendations + summary stats |
-| `POST` | `/api/ingest` | Upload files (`multipart/form-data`, field `files`) |
-| `DELETE` | `/api/recommendations/{id}` | Remove a single recommendation |
-| `GET` | `/api/health` | Health check |
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/recommendations` | Fetch all recommendations and summary stats |
+| `POST` | `/api/ingest` | Upload files (`multipart/form-data`, field: `files`) |
+| `GET` | `/api/actions` | Fetch all action tickets |
+| `DELETE` | `/api/recommendations/{id}` | Delete a recommendation |
+| `GET` | `/` | Health check / service info |
+
+---
+
+## How It Works
+
+1. **Upload** — Drop one or more PDF / DOC / DOCX Certificate of Conformance files
+2. **Extract** — Document Intelligence performs OCR and text extraction
+3. **Parse** — AI Language Engine identifies customer, equipment, part numbers, serials, and dates
+4. **Analyse** — The Lifecycle Engine applies the 5-year recertification rule to compute status and priority
+5. **Act** — Results appear on the dashboard; high-priority items surface as action tickets
+
+---
+
+## License
+
+MIT © 2026 Worldwide Oilfield Machine
+
+---
+
+## Author
+
+**Mansur Javid**\
+Built and maintained for Worldwide Oilfield Machine (WOM).\
+🔗 [github.com/ImMansur](https://github.com/ImMansur)
