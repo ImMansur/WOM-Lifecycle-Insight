@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
+import { getAuth, browserLocalPersistence, setPersistence } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
@@ -21,3 +21,8 @@ if (!firebaseConfig.apiKey) {
 export const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
+
+// Use localStorage persistence to avoid cross-site iframe issues on iOS Safari (ITP)
+setPersistence(auth, browserLocalPersistence).catch(() => {
+  // Silently fall back if localStorage is unavailable (e.g. private browsing)
+});
