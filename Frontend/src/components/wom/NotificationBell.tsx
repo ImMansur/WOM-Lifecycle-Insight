@@ -51,10 +51,10 @@ export function NotificationBell() {
       <PopoverContent
         align="end"
         sideOffset={10}
-        className="w-[380px] p-0 border-border/60 shadow-2xl rounded-2xl overflow-hidden"
+        className="w-[380px] p-0 border-border/60 shadow-2xl rounded-2xl overflow-hidden flex flex-col max-h-[min(560px,80vh)]"
       >
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-border/40 bg-muted/20 px-4 py-3">
+        <div className="flex shrink-0 items-center justify-between border-b border-border/40 bg-muted/20 px-4 py-3">
           <div className="flex items-center gap-2">
             <Bell className="size-4 text-primary" />
             <span className="font-bold text-sm text-foreground">Notifications</span>
@@ -75,7 +75,7 @@ export function NotificationBell() {
         </div>
 
         {/* List */}
-        <div className="max-h-[440px] overflow-y-auto divide-y divide-border/30">
+        <div className="overflow-y-auto divide-y divide-border/30">
           {notifications.length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-12 text-center">
               <Bell className="size-10 text-muted-foreground/20" />
