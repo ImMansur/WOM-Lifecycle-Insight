@@ -32,7 +32,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Safety timeout: if Firebase doesn't respond in 6s, unblock the UI anyway
+    const timeout = setTimeout(() => setLoading(false), 6000);
+
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      clearTimeout(timeout);
       setLoading(true);
       if (firebaseUser) {
         // Fetch role from Firestore
@@ -66,7 +70,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
     });
 
-    return () => unsubscribe();
+    return () => { clearTimeout(timeout); unsubscribe(); };
   }, []);
 
   const signIn = async (email: string, password: string) => {
