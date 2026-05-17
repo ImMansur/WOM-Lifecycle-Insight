@@ -19,7 +19,7 @@ An intelligent document processing platform for **Worldwide Oilfield Machine (WO
 - **Real-time Dashboard** — Live analytics, status distribution charts, and filterable recommendation table
 - **Action Center** — Track and manage recertification tickets with AI-suggested actions
 - **Secure Auth** — Firebase Authentication with role-based access control
-- **Cloud Ready** — Deployable to Vercel (frontend + backend as separate projects)
+- **Cloud Ready** — Single Vercel project deployment from the repo root
 
 ---
 
@@ -63,8 +63,8 @@ An intelligent document processing platform for **Worldwide Oilfield Machine (WO
 ### Infrastructure & Deployment
 | Technology | Purpose |
 |------------|----------|
-| Vercel | Frontend hosting (static Vite SPA) |
-| Vercel Serverless | Backend hosting (Python ASGI functions) |
+| Vercel | Single-project hosting — static SPA + Python serverless functions |
+| Vercel Serverless | FastAPI routes served under `/api/*` |
 
 ---
 
@@ -72,12 +72,12 @@ An intelligent document processing platform for **Worldwide Oilfield Machine (WO
 
 ```
 .
+├── vercel.json                     # Single Vercel config (root)
 ├── backend/                        ← FastAPI (Python)
 │   ├── main.py                     # App entry point
 │   ├── models.py                   # Pydantic models
 │   ├── store.py                    # Firestore data layer
 │   ├── requirements.txt
-│   ├── vercel.json                 # Backend Vercel config
 │   ├── api/
 │   │   └── index.py               # Vercel serverless entry
 │   ├── routers/
@@ -93,7 +93,6 @@ An intelligent document processing platform for **Worldwide Oilfield Machine (WO
     │   ├── routes/                # Pages (dashboard, upload, login, etc.)
     │   ├── components/            # UI components
     │   └── lib/                   # API client, auth, utilities
-    ├── vercel.json                # Frontend Vercel config
     └── package.json
 ```
 
@@ -206,14 +205,38 @@ cd Frontend && npm run dev
 
 ## Deployment (Vercel)
 
-Deploy as two separate Vercel projects:
+Deploy as a **single Vercel project** from the repo root:
 
-| Project | Root Directory | Config |
-|---------|---------------|--------|
-| **Frontend** | `Frontend/` | `Frontend/vercel.json` |
-| **Backend** | `backend/` | `backend/vercel.json` |
+1. Import the repository on [vercel.com/new](https://vercel.com/new)
+2. Leave **Root Directory** as `./` (default)
+3. Vercel will auto-detect the `vercel.json` at the root
+4. Set all environment variables (see below) in the Vercel dashboard
+5. Click **Deploy**
 
-Set all environment variables from the `.env.example` files in each project's Vercel dashboard. Set `VITE_API_URL` on the frontend to the deployed backend Vercel URL.
+**Environment variables to set in Vercel:**
+
+```env
+# Backend
+DOCUMENT_INTELLIGENCE_ENDPOINT=
+DOCUMENT_INTELLIGENCE_KEY=
+DI_MODEL_ID=prebuilt-layout
+AZURE_OPENAI_ENDPOINT=
+AZURE_OPENAI_KEY=
+AZURE_OPENAI_DEPLOYMENT=gpt-4.1
+AZURE_OPENAI_API_VERSION=2024-02-15-preview
+FIREBASE_SERVICE_ACCOUNT_JSON=
+
+# Frontend
+VITE_API_URL=/
+VITE_FIREBASE_API_KEY=
+VITE_FIREBASE_AUTH_DOMAIN=
+VITE_FIREBASE_PROJECT_ID=
+VITE_FIREBASE_STORAGE_BUCKET=
+VITE_FIREBASE_MESSAGING_SENDER_ID=
+VITE_FIREBASE_APP_ID=
+```
+
+> **Note:** Set `VITE_API_URL` to `/` since the frontend and backend share the same domain.
 
 ---
 
