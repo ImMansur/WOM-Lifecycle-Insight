@@ -1,0 +1,973 @@
+import { useState } from "react";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  fetchActions,
+  fetchRecommendations,
+  createAction,
+  patchAction,
+  deleteAction,
+  addComment,
+  deleteComment,
+  suggestNextSteps,
+} from "@/lib/api";
+import type { Action, ActionStatus } from "@/lib/api";
+import type { Recommendation } from "@/lib/wom-data";
+import { cn } from "@/lib/utils";
+import { useAuth } from "@/lib/auth-context";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Separator } from "@/components/ui/separator";
+import {
+  Bell,
+  Settings,
+  LogOut,
+  User,
+  Plus,
+  MessageSquare,
+  CheckCircle2,
+  XCircle,
+  Clock3,
+  Trash2,
+  ChevronRight,
+  ChevronDown,
+  Send,
+  LayoutGrid,
+  Zap,
+  Filter,
+  AlertTriangle,
+  CalendarClock,
+  Building2,
+  Sparkles,
+  Wrench,
+  Hash,
+  FileText,
+  TicketIcon,
+} from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
+import { NotificationBell } from "@/components/wom/NotificationBell";
+
+export const Route = createFileRoute("/action-center")({
+  component: ActionCenter,
+});
+
+// â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+const STATUS_META: Record<
+  ActionStatus,
+  { label: string; dot: string; badge: string; icon: React.ReactNode }
+> = {
+  in_progress: {
+    label: "In Progress",
+    dot: "bg-orange-500",
+    badge: "border-orange-400/40 bg-orange-500/10 text-orange-400",
+    icon: <Clock3 className="size-3.5" />,
+  },
+  closed: {
+    label: "Closed",
+    dot: "bg-emerald-500",
+    badge: "border-emerald-500/40 bg-emerald-500/10 text-emerald-400",
+    icon: <CheckCircle2 className="size-3.5" />,
+  },
+  failed: {
+    label: "Failed",
+    dot: "bg-red-500",
+    badge: "border-red-500/40 bg-red-500/10 text-red-400",
+    icon: <XCircle className="size-3.5" />,
+  },
+};
+
+function StatusBadge({ status }: { status: ActionStatus }) {
+  const m = STATUS_META[status];
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider",
+        m.badge,
+      )}
+    >
+      <span className={cn("size-1.5 rounded-full", m.dot)} />
+      {m.label}
+    </span>
+  );
+}
+
+function fmtDate(iso: string) {
+  try {
+    return new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date(iso));
+  } catch {
+    return iso;
+  }
+}
+
+function fmtDateShort(iso: string) {
+  try {
+    return new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      day: "numeric",
+    }).format(new Date(iso));
+  } catch {
+    return iso;
+  }
+}
+
+// â”€â”€â”€ User menu â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function UserMenu() {
+  const { user, signOut } = useAuth();
+  const navigate = useNavigate();
+  if (!user) return null;
+  const initials = (user.displayName ?? user.email ?? "A")
+    .split(" ")
+    .map((p) => p[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button className="group flex items-center gap-3 px-3 py-2 rounded-2xl cursor-pointer border border-transparent hover:border-border/40 hover:bg-secondary/60 hover:shadow-sm transition-all focus:outline-none">
+          <Avatar className="size-9 border border-border bg-primary/10 transition-transform group-hover:scale-105">
+            <AvatarFallback className="bg-primary/10 text-primary text-xs font-bold">
+              {initials}
+            </AvatarFallback>
+          </Avatar>
+          <div className="hidden sm:flex flex-col text-left leading-tight">
+            <div className="text-sm font-bold text-foreground group-hover:text-primary transition-colors">{user.displayName ?? "Admin"}</div>
+            <div className="text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-widest">{(user as any).role ?? "Fleet Manager"}</div>
+          </div>
+          <ChevronDown className="hidden sm:block size-3.5 text-muted-foreground/40 group-hover:text-muted-foreground transition-all group-hover:translate-y-0.5" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-56 bg-surface border-border">
+        <DropdownMenuLabel>
+          <div className="font-semibold text-foreground truncate">{user.displayName ?? "Admin"}</div>
+          <div className="text-xs text-muted-foreground font-normal truncate">{user.email}</div>
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem className="gap-2 text-muted-foreground cursor-pointer">
+          <User className="size-4" /> Profile
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          className="gap-2 text-destructive cursor-pointer"
+          onClick={async () => { await signOut(); navigate({ to: "/login" }); }}
+        >
+          <LogOut className="size-4" /> Sign out
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+// â”€â”€â”€ Create Action Dialog â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function CreateActionDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+}) {
+  const qc = useQueryClient();
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [status, setStatus] = useState<ActionStatus>("in_progress");
+
+  const mutation = useMutation({
+    mutationFn: () => createAction({ title: title.trim(), description: description.trim() || undefined, status }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["actions"] });
+      setTitle("");
+      setDescription("");
+      setStatus("in_progress");
+      onOpenChange(false);
+    },
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md bg-surface border-border">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-foreground">
+            <Plus className="size-4 text-primary" /> New Action
+          </DialogTitle>
+          <DialogDescription className="text-muted-foreground text-sm">
+            Create a work order or action item to track follow-up.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 pt-1">
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Title *</label>
+            <Input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="e.g. Follow up on Shell recertification"
+              className="bg-background/60 border-border/60"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Description</label>
+            <Textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Additional contextâ€¦"
+              rows={3}
+              className="resize-none bg-background/60 border-border/60"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Initial Status</label>
+            <div className="flex gap-2">
+              {(["in_progress", "closed", "failed"] as ActionStatus[]).map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => setStatus(s)}
+                  className={cn(
+                    "flex-1 rounded-lg border px-3 py-2 text-xs font-semibold transition-all",
+                    status === s
+                      ? STATUS_META[s].badge + " ring-1 ring-current"
+                      : "border-border/60 text-muted-foreground hover:border-border",
+                  )}
+                >
+                  {STATUS_META[s].label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {mutation.isError && (
+            <p className="text-xs text-destructive">{(mutation.error as Error).message}</p>
+          )}
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={mutation.isPending}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => mutation.mutate()}
+              disabled={!title.trim() || mutation.isPending}
+              className="bg-primary text-primary-foreground hover:bg-primary/90 font-bold"
+            >
+              {mutation.isPending ? "Creatingâ€¦" : "Create Action"}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// â”€â”€â”€ Action Detail Sheet â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function ActionDetailSheet({
+  action,
+  open,
+  onOpenChange,
+}: {
+  action: Action | null;
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+}) {
+  const qc = useQueryClient();
+  const { user } = useAuth();
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const statusMutation = useMutation({
+    mutationFn: (status: ActionStatus) => patchAction(action!.id, { status }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["actions"] }),
+  });
+
+  const addMutation = useMutation({
+    mutationFn: (text: string) =>
+      addComment(action!.id, text, user?.displayName ?? user?.email ?? "Admin"),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["actions"] }),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (commentId: string) => deleteComment(action!.id, commentId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["actions"] }),
+  });
+
+  const destroyMutation = useMutation({
+    mutationFn: () => deleteAction(action!.id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["actions"] });
+      setConfirmDelete(false);
+      onOpenChange(false);
+    },
+  });
+
+  if (!action) return null;
+
+  return (
+    <>
+      <Sheet open={open} onOpenChange={onOpenChange}>
+        <SheetContent side="right" className="w-full overflow-y-auto border-l border-border bg-surface p-0 sm:max-w-[560px]">
+          <div className="sticky top-0 z-10 border-b border-border bg-surface/95 px-6 py-5 backdrop-blur">
+            <SheetHeader className="space-y-3 text-left">
+              <div className="flex items-center gap-2">
+                <StatusBadge status={action.status} />
+                <span className="ml-auto font-mono text-[10px] text-muted-foreground">{fmtDate(action.createdAt)}</span>
+              </div>
+              <SheetTitle className="font-display text-xl leading-tight text-foreground">{action.title}</SheetTitle>
+              {action.description && <p className="text-sm text-muted-foreground leading-relaxed">{action.description}</p>}
+            </SheetHeader>
+          </div>
+
+          <div className="px-6 py-6 space-y-8">
+            <section>
+              <h3 className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground flex items-center gap-2">
+                <Filter className="size-3.5" /> Change Status
+              </h3>
+              <div className="flex gap-2">
+                {(["in_progress", "closed", "failed"] as ActionStatus[]).map((s) => {
+                  const active = action.status === s;
+                  return (
+                    <button
+                      key={s} type="button"
+                      onClick={() => !active && statusMutation.mutate(s)}
+                      disabled={active || statusMutation.isPending}
+                      className={cn(
+                        "flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-3 py-2.5 text-xs font-semibold transition-all",
+                        active ? STATUS_META[s].badge + " ring-1 ring-current" : "border-border/60 text-muted-foreground hover:border-border disabled:opacity-40",
+                      )}
+                    >
+                      {STATUS_META[s].icon} {STATUS_META[s].label}
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+
+            <Separator className="bg-border" />
+
+            <CommentThread
+              action={action}
+              onAddComment={(text) => addMutation.mutate(text)}
+              onDeleteComment={(id) => deleteMutation.mutate(id)}
+              isAddPending={addMutation.isPending}
+              isDeletePending={deleteMutation.isPending}
+            />
+
+            <Separator className="bg-border" />
+
+            <AiSuggestions actionId={action.id} />
+
+            <Separator className="bg-border" />
+
+            <section>
+              <Button variant="ghost" className="text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => setConfirmDelete(true)}>
+                <Trash2 className="mr-2 size-4" /> Delete Action
+              </Button>
+            </section>
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      <Dialog open={confirmDelete} onOpenChange={(v) => !destroyMutation.isPending && setConfirmDelete(v)}>
+        <DialogContent className="sm:max-w-sm bg-surface border-border">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <Trash2 className="size-4" /> Delete action?
+            </DialogTitle>
+            <DialogDescription>
+              This will permanently remove <strong className="text-foreground">"{action.title}"</strong> and all its comments.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="ghost" onClick={() => setConfirmDelete(false)} disabled={destroyMutation.isPending}>Cancel</Button>
+            <Button variant="destructive" onClick={() => destroyMutation.mutate()} disabled={destroyMutation.isPending}>
+              {destroyMutation.isPending ? "Deletingâ€¦" : "Delete"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+// â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+function RecStatusBadge({ status }: { status: string }) {
+  const isOverdue = status === "Expired / overdue";
+  return (
+    <span className={cn(
+      "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider",
+      isOverdue
+        ? "border-red-500/40 bg-red-500/10 text-red-400"
+        : "border-orange-400/40 bg-orange-500/10 text-orange-400",
+    )}>
+      <span className={cn("size-1.5 rounded-full", isOverdue ? "bg-red-500" : "bg-orange-500")} />
+      {isOverdue ? "Overdue" : "Due Soon"}
+    </span>
+  );
+}
+
+// â”€â”€â”€ Comment Thread â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+function AiSuggestions({ actionId }: { actionId: string | undefined }) {
+  const [steps, setSteps] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function generate() {
+    if (!actionId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await suggestNextSteps(actionId);
+      setSteps(result);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <section className="space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground flex items-center gap-2">
+          <Sparkles className="size-3.5 text-primary" /> AI Suggested Next Steps
+        </h3>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={generate}
+          disabled={loading || !actionId}
+          className="h-7 gap-1.5 border-primary/30 text-primary hover:bg-primary/8 text-xs font-bold"
+        >
+          {loading
+            ? <><span className="size-3 animate-spin rounded-full border border-primary border-t-transparent" /> Generating…</>
+            : <><Sparkles className="size-3" /> {steps.length ? "Regenerate" : "Generate"}</>
+          }
+        </Button>
+      </div>
+
+      {error && (
+        <p className="rounded-lg border border-destructive/30 bg-destructive/8 px-3 py-2 text-xs text-destructive">{error}</p>
+      )}
+
+      {steps.length > 0 && (
+        <ol className="space-y-2">
+          {steps.map((step, i) => (
+            <li key={i} className="flex items-start gap-3 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3">
+              <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/20 text-[10px] font-black text-primary">
+                {i + 1}
+              </span>
+              <span className="text-sm text-foreground leading-snug">{step}</span>
+            </li>
+          ))}
+        </ol>
+      )}
+
+      {!loading && steps.length === 0 && !error && (
+        <p className="text-xs text-muted-foreground/50 italic">
+          Click "Generate" to get AI-suggested next steps based on the ticket and comment thread.
+        </p>
+      )}
+    </section>
+  );
+}
+
+function CommentThread({
+  action,
+  onAddComment,
+  onDeleteComment,
+  isAddPending,
+  isDeletePending,
+}: {
+  action: Action | null;
+  onAddComment: (text: string) => void;
+  onDeleteComment: (id: string) => void;
+  isAddPending: boolean;
+  isDeletePending: boolean;
+}) {
+  const [text, setText] = useState("");
+  const comments = action?.comments ?? [];
+
+  function send() {
+    if (!text.trim()) return;
+    onAddComment(text.trim());
+    setText("");
+  }
+
+  return (
+    <section className="space-y-4">
+      <h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground flex items-center gap-2">
+        <MessageSquare className="size-3.5" /> Comments
+        <span className="ml-auto rounded-full border border-border bg-muted px-1.5 py-0.5 text-[10px] font-bold">
+          {comments.length}
+        </span>
+      </h3>
+      {comments.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-border/60 py-8 text-center text-sm text-muted-foreground/60">
+          No comments yet. Add the first one below.
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {comments.map((c) => (
+            <div key={c.id} className="group relative rounded-xl border border-border/60 bg-background/40 p-4">
+              <div className="flex items-center justify-between gap-2 mb-1.5">
+                <div className="flex items-center gap-2">
+                  <div className="flex size-6 items-center justify-center rounded-full bg-primary/15 text-[10px] font-bold text-primary">
+                    {(c.author[0] ?? "A").toUpperCase()}
+                  </div>
+                  <span className="text-xs font-semibold text-foreground">{c.author}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-[10px] text-muted-foreground/60">{fmtDate(c.createdAt)}</span>
+                  <button
+                    onClick={() => onDeleteComment(c.id)}
+                    disabled={isDeletePending}
+                    className="opacity-0 group-hover:opacity-100 rounded p-1 text-muted-foreground/50 hover:text-destructive hover:bg-destructive/10 transition-all"
+                  >
+                    <Trash2 className="size-3" />
+                  </button>
+                </div>
+              </div>
+              <p className="text-sm text-muted-foreground leading-relaxed">{c.text}</p>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="space-y-2">
+        <Textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) send(); }}
+          placeholder="Add a commentâ€¦ (Ctrl+Enter to send)"
+          rows={3}
+          className="resize-none bg-background/60 border-border/60 focus:border-primary/50 text-sm"
+        />
+        <div className="flex justify-end">
+          <Button onClick={send} disabled={!text.trim() || isAddPending} size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90 font-bold">
+            {isAddPending ? "Sendingâ€¦" : <><Send className="mr-2 size-3.5" />Send</>}
+          </Button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// â”€â”€â”€ Ticket Sheet â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+function TicketSheet({
+  rec,
+  linkedAction,
+  open,
+  onOpenChange,
+}: {
+  rec: Recommendation | null;
+  linkedAction: Action | undefined;
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+}) {
+  const qc = useQueryClient();
+  const { user } = useAuth();
+  const isOverdue = rec?.status === "Expired / overdue";
+
+  const getOrCreateActionId = async (): Promise<string> => {
+    if (linkedAction) return linkedAction.id;
+    const created = await createAction({
+      title: rec!.equipment ?? rec!.customer ?? rec!.sourceFile,
+      description: rec!.recommendation,
+      status: "in_progress",
+      linkedRecId: rec!.id,
+    });
+    qc.invalidateQueries({ queryKey: ["actions"] });
+    return created.id;
+  };
+
+  const addMutation = useMutation({
+    mutationFn: async (text: string) => {
+      const id = await getOrCreateActionId();
+      return addComment(id, text, user?.displayName ?? user?.email ?? "Admin");
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["actions"] }),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (commentId: string) => deleteComment(linkedAction!.id, commentId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["actions"] }),
+  });
+
+  const statusMutation = useMutation({
+    mutationFn: async (status: ActionStatus) => {
+      const id = await getOrCreateActionId();
+      return patchAction(id, { status });
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["actions"] }),
+  });
+
+  if (!rec) return null;
+  const actionStatus: ActionStatus = linkedAction?.status ?? "in_progress";
+
+  function Field({ label, value, icon }: { label: string; value?: string | null; icon?: React.ReactNode }) {
+    return (
+      <div>
+        <div className="flex items-center gap-1.5 mb-0.5">
+          {icon && <span className="text-muted-foreground/60">{icon}</span>}
+          <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{label}</span>
+        </div>
+        <p className={cn("text-sm font-mono", value ? "text-foreground" : "text-muted-foreground/40")}>{value ?? "—"}</p>
+      </div>
+    );
+  }
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent side="right" className="w-full overflow-y-auto border-l border-border bg-surface p-0 sm:max-w-[600px]">
+        <div className="sticky top-0 z-10 border-b border-border bg-surface/95 px-6 py-5 backdrop-blur">
+          <SheetHeader className="space-y-3 text-left">
+            <div className="flex items-center gap-2 flex-wrap">
+              <RecStatusBadge status={rec.status} />
+              {linkedAction && <StatusBadge status={linkedAction.status} />}
+              <span className={cn("ml-auto text-xs font-bold px-2 py-0.5 rounded", rec.priority === "High" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground")}>
+                {rec.priority}
+              </span>
+            </div>
+            <SheetTitle className="font-display text-xl leading-tight text-foreground">{rec.equipment ?? rec.sourceFile}</SheetTitle>
+            {rec.customer && (
+              <p className="text-sm text-muted-foreground flex items-center gap-1.5"><Building2 className="size-3.5 shrink-0" />{rec.customer}</p>
+            )}
+          </SheetHeader>
+        </div>
+
+        <div className="px-6 py-6 space-y-8">
+          {/* Urgency banner */}
+          <div className={cn("flex items-start gap-3 rounded-xl border p-4",
+            isOverdue ? "border-red-500/30 bg-red-500/8 text-red-400" : "border-orange-400/30 bg-orange-500/8 text-orange-400",
+          )}>
+            {isOverdue ? <AlertTriangle className="size-4 mt-0.5 shrink-0" /> : <CalendarClock className="size-4 mt-0.5 shrink-0" />}
+            <div>
+              <p className="text-sm font-semibold">
+                {isOverdue
+                  ? `Overdue by ${Math.abs(rec.monthsToRecert ?? 0)} month${Math.abs(rec.monthsToRecert ?? 0) !== 1 ? "s" : ""}`
+                  : rec.monthsToRecert != null
+                    ? `Due in ${rec.monthsToRecert} month${rec.monthsToRecert !== 1 ? "s" : ""}`
+                    : "Due soon"}
+              </p>
+              {rec.recertificationDue && <p className="mt-0.5 text-xs opacity-80">Recertification due: {rec.recertificationDue}</p>}
+            </div>
+          </div>
+
+          {/* Details */}
+          <section>
+            <h3 className="mb-4 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground flex items-center gap-2">
+              <FileText className="size-3.5" /> Record Details
+            </h3>
+            <div className="grid grid-cols-2 gap-x-6 gap-y-4">
+              <Field label="Customer" value={rec.customer} icon={<Building2 className="size-3" />} />
+              <Field label="Equipment" value={rec.equipment} icon={<Wrench className="size-3" />} />
+              <Field label="Sales Order" value={rec.salesOrder} icon={<Hash className="size-3" />} />
+              <Field label="Purchase Order" value={rec.purchaseOrder} icon={<Hash className="size-3" />} />
+              <Field label="Location" value={rec.location} />
+              <Field label="Certificate Date" value={rec.certificateDate} icon={<CalendarClock className="size-3" />} />
+            </div>
+            {rec.serials.length > 0 && (
+              <div className="mt-4">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Serials</span>
+                <div className="mt-1 flex flex-wrap gap-1.5">
+                  {rec.serials.map((s) => (
+                    <span key={s} className="rounded border border-border/60 bg-muted/50 px-2 py-0.5 font-mono text-[11px] text-muted-foreground">{s}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </section>
+
+          {/* AI Recommendation */}
+          <section>
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground flex items-center gap-2">
+              <Zap className="size-3.5" /> AI Recommendation
+            </h3>
+            <p className="text-sm text-muted-foreground leading-relaxed rounded-xl border border-border/60 bg-background/40 p-4">{rec.recommendation}</p>
+          </section>
+
+          <Separator className="bg-border" />
+
+          {/* AI Suggested Next Steps */}
+          <AiSuggestions actionId={linkedAction?.id} />
+
+          <Separator className="bg-border" />
+
+          {/* Ticket status */}
+          <section>
+            <h3 className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground flex items-center gap-2">
+              <Filter className="size-3.5" /> Ticket Status
+            </h3>
+            <div className="flex gap-2">
+              {(["in_progress", "closed", "failed"] as ActionStatus[]).map((s) => {
+                const active = actionStatus === s;
+                return (
+                  <button
+                    key={s} type="button"
+                    onClick={() => !active && statusMutation.mutate(s)}
+                    disabled={active || statusMutation.isPending}
+                    className={cn(
+                      "flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-3 py-2.5 text-xs font-semibold transition-all",
+                      active ? STATUS_META[s].badge + " ring-1 ring-current" : "border-border/60 text-muted-foreground hover:border-border disabled:opacity-40",
+                    )}
+                  >
+                    {STATUS_META[s].icon} {STATUS_META[s].label}
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
+          <Separator className="bg-border" />
+
+          <CommentThread
+            action={linkedAction ?? null}
+            onAddComment={(text) => addMutation.mutate(text)}
+            onDeleteComment={(id) => deleteMutation.mutate(id)}
+            isAddPending={addMutation.isPending}
+            isDeletePending={deleteMutation.isPending}
+          />
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+// â”€â”€â”€ Ticket Card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+function TicketCard({
+  rec,
+  linkedAction,
+  onClick,
+}: {
+  rec: Recommendation;
+  linkedAction: Action | undefined;
+  onClick: () => void;
+}) {
+  const isOverdue = rec.status === "Expired / overdue";
+  const commentCount = linkedAction?.comments.length ?? 0;
+  return (
+    <button
+      type="button" onClick={onClick}
+      className="group relative flex flex-col gap-3 rounded-2xl border border-border/60 bg-surface p-5 text-left transition-all hover:border-primary/30 hover:shadow-lg hover:shadow-primary/5 focus:outline-none focus:ring-2 focus:ring-primary/30"
+    >
+      <div className={cn("absolute left-0 top-0 h-full w-1 rounded-l-2xl", isOverdue ? "bg-red-500" : "bg-orange-500")} />
+      <div className="flex items-start justify-between gap-2 pl-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          <RecStatusBadge status={rec.status} />
+          {linkedAction && <StatusBadge status={linkedAction.status} />}
+        </div>
+        <ChevronRight className="size-4 shrink-0 text-muted-foreground/40 transition-transform group-hover:translate-x-0.5 group-hover:text-primary/60" />
+      </div>
+      <div className="pl-3">
+        <p className="text-sm font-semibold text-foreground leading-snug line-clamp-1">{rec.equipment ?? rec.sourceFile}</p>
+        {rec.customer && (
+          <p className="mt-0.5 text-xs text-muted-foreground/70 flex items-center gap-1">
+            <Building2 className="size-3 shrink-0" /><span className="truncate">{rec.customer}</span>
+          </p>
+        )}
+      </div>
+      <div className="pl-3 space-y-1">
+        {rec.recertificationDue && (
+          <div className="flex items-center gap-1.5 text-[11px]">
+            <CalendarClock className={cn("size-3 shrink-0", isOverdue ? "text-red-400" : "text-orange-400")} />
+            <span className={cn("font-mono font-semibold", isOverdue ? "text-red-400" : "text-orange-400")}>{rec.recertificationDue}</span>
+          </div>
+        )}
+        {rec.monthsToRecert != null && (
+          <p className={cn("text-[11px] font-semibold", isOverdue ? "text-red-400/80" : "text-orange-400/80")}>
+            {isOverdue ? `${Math.abs(rec.monthsToRecert)}mo overdue` : `${rec.monthsToRecert}mo remaining`}
+          </p>
+        )}
+      </div>
+      <div className="flex items-center gap-3 pl-3 pt-1 border-t border-border/40">
+        <div className="flex items-center gap-1 text-[10px] text-muted-foreground/60"><MessageSquare className="size-3" /> {commentCount}</div>
+        <span className="size-1 rounded-full bg-border/60" />
+        <span className={cn("inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold", rec.priority === "High" ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground")}>
+          {rec.priority}
+        </span>
+      </div>
+    </button>
+  );
+}
+
+// â”€â”€â”€ Main component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+type TabKey = "tickets" | "actions";
+type ActionStatusFilter = "all" | ActionStatus;
+
+function ActionCenter() {
+  const [selectedRec, setSelectedRec] = useState<Recommendation | null>(null);
+  const [ticketOpen, setTicketOpen] = useState(false);
+
+  const { data: recsData } = useQuery({
+    queryKey: ["recommendations"],
+    queryFn: fetchRecommendations,
+    refetchInterval: 60_000,
+  });
+  const { data: actions = [] } = useQuery({
+    queryKey: ["actions"],
+    queryFn: fetchActions,
+    refetchInterval: 30_000,
+  });
+
+  const recs = recsData?.recommendations ?? [];
+  const overdueRecs = recs.filter((r) => r.status === "Expired / overdue");
+  const dueSoonRecs = recs.filter((r) => r.status === "Due soon");
+
+  const manualActions = actions.filter((a) => !a.linkedRecId);
+  const actionCounts = {
+    in_progress: manualActions.filter((a) => a.status === "in_progress").length,
+    closed: manualActions.filter((a) => a.status === "closed").length,
+  };
+
+  function getLinkedAction(rec: Recommendation) {
+    return actions.find((a) => a.linkedRecId === rec.id);
+  }
+
+  function openTicket(rec: Recommendation) { setSelectedRec(rec); setTicketOpen(true); }
+
+  const liveLinkedAction = selectedRec ? getLinkedAction(selectedRec) : undefined;
+
+  return (
+    <div className="min-h-screen bg-background text-foreground">
+      {/* Header */}
+      <header className="sticky top-0 z-40 border-b border-border/50 bg-background/80 backdrop-blur-xl">
+        <div className="mx-auto flex h-20 max-w-[1600px] items-center gap-8 px-6">
+          <div className="flex items-center gap-5">
+            <div className="relative size-14 shrink-0 overflow-hidden rounded-full border-2 border-primary/20 bg-white shadow-xl shadow-primary/10 transition-all hover:scale-110 hover:shadow-primary/20">
+              <div className="absolute inset-0 bg-gradient-to-tr from-primary/5 to-transparent" />
+              <img src="/logo.png" alt="WOM Logo" className="relative z-10 size-full object-contain p-1.5" />
+            </div>
+            <div className="leading-tight">
+              <div className="font-display text-lg font-black tracking-tight text-accent">WOM <span className="text-primary">Lifecycle</span></div>
+              <div className="font-mono text-[10px] font-bold uppercase tracking-[0.25em] text-muted-foreground/80">Worldwide Oilfield Machine</div>
+            </div>
+          </div>
+          <nav className="mx-auto hidden items-center gap-1 rounded-full bg-secondary/80 p-1.5 backdrop-blur-sm md:flex">
+            <Link to="/dashboard" className="rounded-full px-6 py-2 text-sm font-semibold transition-all text-muted-foreground hover:text-foreground">Home</Link>
+            <Link to="/upload" className="rounded-full px-6 py-2 text-sm font-semibold transition-all text-muted-foreground hover:text-foreground">Upload</Link>
+            <Link to="/action-center" className="rounded-full px-6 py-2 text-sm font-semibold transition-all bg-primary text-white shadow-md shadow-primary/20">Action Center</Link>
+            <Link to="/dashboard" search={{ tab: "Lifecycle Rules" }} className="rounded-full px-6 py-2 text-sm font-semibold transition-all text-muted-foreground hover:text-foreground">Lifecycle Rules</Link>
+          </nav>
+          <div className="ml-auto flex items-center gap-6">
+            <div className="hidden sm:flex items-center gap-2">
+              <NotificationBell />
+            </div>
+            <div className="h-8 w-px bg-border/50 hidden sm:block" />
+            <div className="flex items-center gap-3">
+              <UserMenu />
+            </div>
+          </div>
+        </div>
+      </header>
+
+      {/* Hero */}
+      <section className="relative overflow-hidden py-14">
+        <div className="pointer-events-none absolute inset-0 overflow-hidden">
+          <div className="absolute -top-[20%] left-[10%] size-[40%] rounded-full bg-primary/8 blur-[140px]" />
+          <div className="absolute top-[30%] right-[5%] size-[25%] rounded-full bg-accent/8 blur-[100px]" />
+          <div className="absolute bottom-0 left-1/2 h-px w-3/4 -translate-x-1/2 bg-gradient-to-r from-transparent via-border/60 to-transparent" />
+        </div>
+        <div className="relative mx-auto max-w-[1600px] px-6 flex flex-col gap-4">
+          <div className="inline-flex items-center gap-2 rounded-full border border-primary/25 bg-primary/8 px-4 py-1.5 w-fit font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-primary shadow-sm shadow-primary/10">
+            <Zap className="size-3" /> Work Orders · Action Tracker
+          </div>
+          <h1 className="font-display text-5xl font-black leading-tight tracking-tight text-accent md:text-6xl">
+            Action <span className="bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent italic">Center</span>
+          </h1>
+          <p className="max-w-xl text-base leading-relaxed text-muted-foreground/80">
+            All overdue and upcoming recertification tickets in one place. Add comments, track progress, and close out work orders.
+          </p>
+        </div>
+      </section>
+
+      {/* Metric cards */}
+      <div className="mx-auto max-w-[1600px] px-6 mb-8">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          {[
+            { label: "Overdue", count: overdueRecs.length, color: "text-red-400", bg: "bg-red-500/8", border: "border-red-500/20", icon: <AlertTriangle className="size-5 text-red-400" /> },
+            { label: "Due Soon", count: dueSoonRecs.length, color: "text-orange-400", bg: "bg-orange-500/8", border: "border-orange-400/20", icon: <CalendarClock className="size-5 text-orange-400" /> },
+            { label: "Open Actions", count: actionCounts.in_progress, color: "text-foreground", bg: "bg-muted/40", border: "border-border/60", icon: <LayoutGrid className="size-5 text-muted-foreground" /> },
+            { label: "Closed Actions", count: actionCounts.closed, color: "text-emerald-400", bg: "bg-emerald-500/8", border: "border-emerald-500/20", icon: <CheckCircle2 className="size-5 text-emerald-400" /> },].map((m) => (
+              <div key={m.label} className={cn("rounded-2xl border p-5", m.bg, m.border)}>
+                <div className="flex items-start justify-between">
+                  <div>
+                    <div className={cn("text-3xl font-black tracking-tight", m.color)}>{m.count}</div>
+                    <div className="mt-1 text-xs font-semibold uppercase tracking-[0.15em] text-muted-foreground">{m.label}</div>
+                  </div>
+                  {m.icon}
+                </div>
+              </div>
+            ))}
+        </div>
+      </div>
+
+      {/* Tickets */}
+      <div className="mx-auto max-w-[1600px] px-6 pb-20">
+        <div className="space-y-10">
+          <div>
+            <div className="mb-4 flex items-center gap-3">
+              <AlertTriangle className="size-4 text-red-400" />
+              <h2 className="text-sm font-black uppercase tracking-[0.18em] text-red-400">
+                Overdue — {overdueRecs.length} ticket{overdueRecs.length !== 1 ? "s" : ""}
+              </h2>
+            </div>
+            {overdueRecs.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-red-500/20 py-8 text-center text-sm text-muted-foreground/50">No overdue tickets. Great job!</div>
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {overdueRecs.map((rec) => (
+                  <TicketCard key={rec.id} rec={rec} linkedAction={getLinkedAction(rec)} onClick={() => openTicket(rec)} />
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div>
+            <div className="mb-4 flex items-center gap-3">
+              <CalendarClock className="size-4 text-orange-400" />
+              <h2 className="text-sm font-black uppercase tracking-[0.18em] text-orange-400">
+                Due Soon — {dueSoonRecs.length} ticket{dueSoonRecs.length !== 1 ? "s" : ""}
+              </h2>
+            </div>
+            {dueSoonRecs.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-orange-400/20 py-8 text-center text-sm text-muted-foreground/50">No upcoming tickets.</div>
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {dueSoonRecs.map((rec) => (
+                  <TicketCard key={rec.id} rec={rec} linkedAction={getLinkedAction(rec)} onClick={() => openTicket(rec)} />
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <TicketSheet rec={selectedRec} linkedAction={liveLinkedAction} open={ticketOpen} onOpenChange={setTicketOpen} />
+    </div>
+  );
+}

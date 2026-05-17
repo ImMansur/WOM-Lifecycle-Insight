@@ -1,0 +1,1604 @@
+import { useMemo, useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
+import type { Recommendation } from "@/lib/wom-data";
+import type { Summary } from "@/lib/api";
+import {
+  PieChart,
+  Pie,
+  Cell,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Legend,
+  LineChart,
+  Line,
+  Area,
+  AreaChart,
+} from "recharts";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Clock,
+  FileText,
+  Users,
+  Wrench,
+  TrendingUp,
+  TrendingDown,
+  Activity,
+  Calendar,
+  Filter,
+  Search,
+  BarChart3,
+  RefreshCw,
+  ArrowUpRight,
+  Zap,
+  ShieldAlert,
+  Package,
+  ChevronDown,
+  X,
+  MapPin,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+interface HomeTabProps {
+  recommendations: Recommendation[];
+  summary: Summary;
+  isLoading: boolean;
+  isError: boolean;
+  onRefresh: () => void;
+  lastRefreshed: Date;
+}
+
+// ─── Color Palette ───────────────────────────────────────────────────────────
+
+const PALETTE = {
+  orange: "#e07a2e",   // WOM primary
+  navy: "#1e2a42",   // WOM accent
+  success: "#3cb97f",
+  warning: "#e07a2e",
+  danger: "#d94040",
+  grey: "#6b7a99",
+  steel: "#4a6fa5",
+  teal: "#2db5a3",
+  purple: "#7b5ea7",
+  gold: "#c9a227",
+};
+
+const PRIORITY_COLORS: Record<string, string> = {
+  "High": PALETTE.danger,
+  "Low": PALETTE.success,
+  "Manual review": PALETTE.grey,
+};
+
+const STATUS_COLORS: Record<string, string> = {
+  "Expired / overdue": PALETTE.danger,
+  "Due soon": PALETTE.warning,
+  "Mid-cycle service opportunity": PALETTE.teal,
+  "Manual review": PALETTE.grey,
+};
+
+const CONFIDENCE_COLORS: Record<string, string> = {
+  "High": PALETTE.success,
+  "Low": PALETTE.grey,
+};
+
+const SOURCE_COLORS: Record<string, string> = {
+  "PDF": PALETTE.orange,
+  "DOC": PALETTE.navy,
+  "DOCX": PALETTE.steel,
+};
+
+// ─── Custom Tooltip ───────────────────────────────────────────────────────────
+
+function ChartTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: Array<{ name: string; value: number; color: string }>;
+  label?: string;
+}) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="rounded-xl border border-border/60 bg-background/95 px-4 py-3 shadow-2xl backdrop-blur-md">
+      {label && (
+        <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground">
+          {label}
+        </p>
+      )}
+      {payload.map((entry, i) => (
+        <div key={i} className="flex items-center gap-2 text-sm">
+          <span
+            className="size-2.5 rounded-full shrink-0"
+            style={{ backgroundColor: entry.color }}
+          />
+          <span className="text-muted-foreground">{entry.name}:</span>
+          <span className="font-bold text-foreground">{entry.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PieTooltip({
+  active,
+  payload,
+  total,
+}: {
+  active?: boolean;
+  payload?: Array<{ name: string; value: number }>;
+  total: number;
+}) {
+  if (!active || !payload?.length) return null;
+  const d = payload[0];
+  const pct = total > 0 ? ((d.value / total) * 100).toFixed(1) : "0.0";
+  return (
+    <div className="rounded-xl border border-border/60 bg-background/95 px-4 py-3 shadow-2xl backdrop-blur-md">
+      <p className="text-sm font-bold text-foreground">{d.name}</p>
+      <p className="mt-0.5 font-mono text-xs text-muted-foreground">
+        {d.value} records · {pct}%
+      </p>
+    </div>
+  );
+}
+
+// ─── Section Header ───────────────────────────────────────────────────────────
+
+function SectionHeader({
+  icon,
+  title,
+  subtitle,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  subtitle?: string;
+}) {
+  return (
+    <div className="mb-6 flex items-center gap-3">
+      <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+        {icon}
+      </div>
+      <div>
+        <h2 className="font-display text-lg font-bold tracking-tight text-foreground">
+          {title}
+        </h2>
+        {subtitle && (
+          <p className="text-xs text-muted-foreground">{subtitle}</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── KPI Card ─────────────────────────────────────────────────────────────────
+
+export function MetricCard({
+  icon,
+  label,
+  value,
+  sub,
+  tone = "default",
+  trend,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: number | string;
+  sub?: string;
+  tone?: "default" | "danger" | "success" | "warning" | "primary" | "navy";
+  trend?: "up" | "down" | "neutral";
+}) {
+  const toneMap = {
+    default: { icon: "bg-foreground/5 text-foreground", value: "text-foreground" },
+    primary: { icon: "bg-primary/10 text-primary", value: "text-primary" },
+    danger: { icon: "bg-destructive/10 text-destructive", value: "text-destructive" },
+    success: { icon: "bg-success/10 text-success", value: "text-success" },
+    warning: { icon: "bg-warning/10 text-warning", value: "text-warning" },
+    navy: { icon: "bg-accent/10 text-accent-foreground", value: "text-accent" },
+  };
+  const cls = toneMap[tone];
+
+  return (
+    <div className="group relative overflow-hidden rounded-2xl border border-border/50 bg-background/40 p-6 shadow-sm backdrop-blur-md transition-all hover:border-primary/30 hover:bg-background/60 hover:shadow-lg hover:shadow-primary/5">
+      {/* top shimmer */}
+      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
+
+      <div className="flex items-start justify-between">
+        <div className={cn("flex size-10 items-center justify-center rounded-xl transition-transform group-hover:scale-110", cls.icon)}>
+          {icon}
+        </div>
+        {trend && (
+          <div
+            className={cn(
+              "flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold",
+              trend === "up" ? "bg-success/10 text-success"
+                : trend === "down" ? "bg-destructive/10 text-destructive"
+                  : "bg-muted/50 text-muted-foreground"
+            )}
+          >
+            {trend === "up" ? (
+              <TrendingUp className="size-3" />
+            ) : trend === "down" ? (
+              <TrendingDown className="size-3" />
+            ) : (
+              <Activity className="size-3" />
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className={cn("mt-4 font-display text-4xl font-black tracking-tight", cls.value)}>
+        {value}
+      </div>
+      <div className="mt-1 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/80">
+        {label}
+      </div>
+      {sub && (
+        <div className="mt-2 text-xs font-medium text-muted-foreground/60">
+          {sub}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Chart Card ──────────────────────────────────────────────────────────────
+
+function ChartCard({
+  title,
+  subtitle,
+  children,
+  className,
+}: {
+  title: string;
+  subtitle?: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "rounded-2xl border border-border/50 bg-background/40 p-6 shadow-sm backdrop-blur-md",
+        className
+      )}
+    >
+      <div className="mb-1 font-display text-base font-bold tracking-tight text-foreground">
+        {title}
+      </div>
+      {subtitle && (
+        <div className="mb-4 text-xs text-muted-foreground">{subtitle}</div>
+      )}
+      {children}
+    </div>
+  );
+}
+
+// ─── Custom Pie Label ─────────────────────────────────────────────────────────
+
+function renderCustomPieLabel({
+  cx,
+  cy,
+  midAngle,
+  innerRadius,
+  outerRadius,
+  percent,
+  name,
+}: {
+  cx: number;
+  cy: number;
+  midAngle: number;
+  innerRadius: number;
+  outerRadius: number;
+  percent: number;
+  name: string;
+}) {
+  if (percent < 0.05) return null;
+  const RADIAN = Math.PI / 180;
+  const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
+  const x = cx + radius * Math.cos(-midAngle * RADIAN);
+  const y = cy + radius * Math.sin(-midAngle * RADIAN);
+  return (
+    <text
+      x={x}
+      y={y}
+      fill="white"
+      textAnchor="middle"
+      dominantBaseline="central"
+      className="text-[11px] font-bold"
+      style={{ fontSize: 11, fontWeight: 700 }}
+    >
+      {`${(percent * 100).toFixed(0)}%`}
+    </text>
+  );
+}
+
+// ─── Multi-Select Dropdown ───────────────────────────────────────────────────
+
+export function MultiSelectDropdown({
+  options,
+  selected,
+  onChange,
+  placeholder,
+  icon,
+}: {
+  options: string[];
+  selected: string[];
+  onChange: (v: string[]) => void;
+  placeholder: string;
+  icon: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [panelStyle, setPanelStyle] = useState<React.CSSProperties>({});
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  // Position the fixed panel under the trigger button
+  const openPanel = () => {
+    if (triggerRef.current) {
+      const r = triggerRef.current.getBoundingClientRect();
+      setPanelStyle({
+        position: "fixed",
+        top: r.bottom + 4,
+        left: r.left,
+        width: Math.max(r.width, 240),
+        zIndex: 9999,
+      });
+    }
+    setOpen((v) => !v);
+  };
+
+  // Close on outside click
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (
+        triggerRef.current && !triggerRef.current.contains(e.target as Node) &&
+        panelRef.current && !panelRef.current.contains(e.target as Node)
+      ) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  // Close only when the PAGE scrolls (trigger button moves), not when panel content scrolls
+  useEffect(() => {
+    if (!open) return;
+    const triggerEl = triggerRef.current;
+    if (!triggerEl) return;
+    const initialY = triggerEl.getBoundingClientRect().top;
+    function handleScroll() {
+      const currentY = triggerEl.getBoundingClientRect().top;
+      if (Math.abs(currentY - initialY) > 2) {
+        setOpen(false);
+      }
+    }
+    window.addEventListener("scroll", handleScroll, true);
+    return () => window.removeEventListener("scroll", handleScroll, true);
+  }, [open]);
+
+  const filtered = search.trim()
+    ? options.filter((o) => o.toLowerCase().includes(search.toLowerCase()))
+    : options;
+
+  const toggle = (val: string) =>
+    onChange(selected.includes(val) ? selected.filter((s) => s !== val) : [...selected, val]);
+
+  const allFilteredSelected = filtered.length > 0 && filtered.every((o) => selected.includes(o));
+
+  const toggleAll = () => {
+    if (allFilteredSelected) {
+      onChange(selected.filter((s) => !filtered.includes(s)));
+    } else {
+      onChange([...new Set([...selected, ...filtered])]);
+    }
+  };
+
+  const label =
+    selected.length === 0
+      ? placeholder
+      : selected.length === 1
+        ? selected[0]
+        : `${selected.length} selected`;
+
+  return (
+    <div className="relative">
+      {/* Trigger */}
+      <button
+        ref={triggerRef}
+        type="button"
+        onClick={openPanel}
+        className={cn(
+          "flex h-10 w-full items-center gap-3 rounded-2xl border border-border/40 bg-secondary/40 pl-4 pr-10 text-sm transition-all hover:bg-secondary/60 hover:border-primary/20 focus:outline-none",
+          selected.length > 0 ? "text-foreground font-semibold" : "text-muted-foreground font-medium"
+        )}
+      >
+        <span className="shrink-0 text-muted-foreground/60">{icon}</span>
+        <span className="min-w-0 flex-1 truncate text-left">{label}</span>
+        {selected.length > 0 && (
+          <span className="absolute right-9 flex items-center">
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onChange([]); }}
+              className="text-muted-foreground/60 hover:text-foreground p-1 rounded-full hover:bg-background"
+            >
+              <X className="size-3.5" />
+            </button>
+          </span>
+        )}
+      </button>
+      <ChevronDown className="pointer-events-none absolute right-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground/60" />
+
+      {/* Dropdown panel — portalled into body so it escapes every stacking context */}
+      {open && createPortal(
+        <div
+          ref={panelRef}
+          style={panelStyle}
+          className="overflow-hidden rounded-xl border border-border/60 bg-background shadow-2xl"
+        >
+          {/* Search */}
+          <div className="border-b border-border/40 px-3 py-2">
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 size-3 -translate-y-1/2 text-muted-foreground/60" />
+              <input
+                autoFocus
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search part numbers…"
+                className="h-7 w-full rounded-md border border-border/40 bg-background/50 pl-6 text-[11px] text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-0"
+              />
+            </div>
+          </div>
+
+          {/* Select / deselect filtered */}
+          {filtered.length > 0 && (
+            <div className="flex items-center justify-between border-b border-border/30 px-3 py-1.5">
+              <button
+                type="button"
+                onClick={toggleAll}
+                className="text-[10px] font-bold text-primary hover:underline"
+              >
+                {allFilteredSelected ? "Deselect all" : "Select all"}
+                {search && " matching"}
+              </button>
+              {selected.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => onChange([])}
+                  className="flex items-center gap-1 text-[10px] font-bold text-muted-foreground hover:text-destructive"
+                >
+                  <X className="size-2.5" /> Clear ({selected.length})
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Options */}
+          <div className="max-h-52 overflow-y-auto">
+            {filtered.length === 0 ? (
+              <div className="px-3 py-4 text-center text-[11px] text-muted-foreground">No matches</div>
+            ) : (
+              filtered.map((opt) => (
+                <button
+                  key={opt}
+                  type="button"
+                  onClick={() => toggle(opt)}
+                  className={cn(
+                    "flex w-full items-center gap-2.5 px-3 py-2 text-left text-xs transition-colors hover:bg-primary/5",
+                    selected.includes(opt) ? "text-foreground" : "text-muted-foreground"
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "flex size-4 shrink-0 items-center justify-center rounded border transition-colors",
+                      selected.includes(opt)
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-border/60 bg-background"
+                    )}
+                  >
+                    {selected.includes(opt) && (
+                      <svg viewBox="0 0 10 8" className="size-2.5" fill="none" stroke="currentColor" strokeWidth="2">
+                        <polyline points="1 4 4 7 9 1" />
+                      </svg>
+                    )}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate font-mono">{opt}</span>
+                </button>
+              ))
+            )}
+          </div>
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+}
+
+// ─── Filter Bar ───────────────────────────────────────────────────────────────
+
+export type TimeFilter = "all" | "overdue" | "3m" | "6m" | "12m";
+export type PriorityFilter = "all" | "High" | "Low" | "Manual review";
+
+export function FilterBar({
+  timeFilter,
+  setTimeFilter,
+  priorityFilter,
+  setPriorityFilter,
+  selectedClients,
+  setSelectedClients,
+  selectedLocations,
+  setSelectedLocations,
+  selectedParts,
+  setSelectedParts,
+  clientOptions,
+  locationOptions,
+  partNumberOptions,
+  count,
+  total,
+}: {
+  timeFilter: TimeFilter;
+  setTimeFilter: (v: TimeFilter) => void;
+  priorityFilter: PriorityFilter;
+  setPriorityFilter: (v: PriorityFilter) => void;
+  selectedClients: string[];
+  setSelectedClients: (v: string[]) => void;
+  selectedLocations: string[];
+  setSelectedLocations: (v: string[]) => void;
+  selectedParts: string[];
+  setSelectedParts: (v: string[]) => void;
+  clientOptions: string[];
+  locationOptions: string[];
+  partNumberOptions: string[];
+  count: number;
+  total: number;
+}) {
+  const timeOptions: [TimeFilter, string][] = [
+    ["all", "All time"],
+    ["overdue", "Overdue"],
+    ["3m", "≤3 months"],
+    ["6m", "≤6 months"],
+    ["12m", "≤12 months"],
+  ];
+  const priorityOptions: [PriorityFilter, string][] = [
+    ["all", "All priorities"],
+    ["High", "High"],
+    ["Low", "Low"],
+    ["Manual review", "Manual review"],
+  ];
+
+  return (
+    <div className="sticky top-20 z-30 mb-8 rounded-[2.5rem] border border-border/40 bg-white px-8 py-6 shadow-2xl shadow-black/[0.04]">
+      <div className="flex flex-col gap-4">
+        {/* Row 1: Quick Toggles + Count */}
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex size-9 items-center justify-center rounded-full bg-secondary/80 text-muted-foreground/60">
+            <Filter className="size-4" />
+          </div>
+
+          {/* Time filter */}
+          <div className="flex items-center gap-1.5">
+            {timeOptions.map(([key, label]) => (
+              <button
+                key={key}
+                onClick={() => setTimeFilter(key)}
+                className={cn(
+                  "rounded-full px-5 py-2.5 text-xs font-bold transition-all",
+                  timeFilter === key
+                    ? "bg-primary text-white shadow-lg shadow-primary/25"
+                    : "text-muted-foreground hover:bg-secondary/80 hover:text-foreground"
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div className="h-8 w-px bg-border/40" />
+
+          {/* Priority filter */}
+          <div className="flex items-center gap-1.5">
+            {priorityOptions.map(([key, label]) => (
+              <button
+                key={key}
+                onClick={() => setPriorityFilter(key)}
+                className={cn(
+                  "rounded-full px-5 py-2.5 text-xs font-bold transition-all",
+                  priorityFilter === key
+                    ? "bg-accent text-white shadow-lg shadow-black/10"
+                    : "text-muted-foreground hover:bg-secondary/80 hover:text-foreground"
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {/* Record count */}
+          <div className="ml-auto flex items-center gap-2 font-display text-xl font-bold">
+            <span className="text-[#0D1117]">{count}</span>
+            <span className="text-muted-foreground/30 font-medium">/</span>
+            <span className="text-muted-foreground/30 font-medium text-sm">{total} records</span>
+          </div>
+        </div>
+
+        {/* Row 2: Deep Filters */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <MultiSelectDropdown
+            options={clientOptions}
+            selected={selectedClients}
+            onChange={setSelectedClients}
+            placeholder="All clients"
+            icon={<Users className="size-4" />}
+          />
+          <MultiSelectDropdown
+            options={locationOptions}
+            selected={selectedLocations}
+            onChange={setSelectedLocations}
+            placeholder="All locations"
+            icon={<MapPin className="size-4" />}
+          />
+          <MultiSelectDropdown
+            options={partNumberOptions}
+            selected={selectedParts}
+            onChange={setSelectedParts}
+            placeholder="All part numbers"
+            icon={<Package className="size-4" />}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Upcoming Recerts List ────────────────────────────────────────────────────
+
+function UpcomingRow({ rec }: { rec: Recommendation }) {
+  const overdue = rec.monthsToRecert !== null && rec.monthsToRecert < 0;
+  const dueSoon = rec.monthsToRecert !== null && rec.monthsToRecert <= 6 && rec.monthsToRecert >= 0;
+  return (
+    <div className="flex items-center gap-4 rounded-xl px-4 py-3 transition-colors hover:bg-foreground/[0.03]">
+      <div
+        className={cn(
+          "flex size-9 shrink-0 items-center justify-center rounded-lg text-xs font-bold",
+          overdue ? "bg-destructive/10 text-destructive" : dueSoon ? "bg-warning/10 text-warning" : "bg-success/10 text-success"
+        )}
+      >
+        {overdue ? (
+          <ShieldAlert className="size-4" />
+        ) : (
+          <Calendar className="size-4" />
+        )}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm font-semibold text-foreground">
+          {rec.customer ?? <span className="italic text-muted-foreground">Unknown customer</span>}
+        </div>
+        <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
+          {rec.equipment ?? "—"} · {rec.salesOrder ?? "No SO"}
+        </div>
+      </div>
+      <div className="shrink-0 text-right">
+        <div
+          className={cn(
+            "font-mono text-sm font-bold",
+            overdue ? "text-destructive" : dueSoon ? "text-warning" : "text-success"
+          )}
+        >
+          {rec.recertificationDue ?? "—"}
+        </div>
+        <div className="mt-0.5 font-mono text-[10px] text-muted-foreground">
+          {rec.monthsToRecert !== null
+            ? rec.monthsToRecert < 0
+              ? `${Math.abs(rec.monthsToRecert)} mo overdue`
+              : `in ${rec.monthsToRecert} mo`
+            : "—"}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Charts Section (reusable, driven by any filtered array) ─────────────────
+
+export function ChartsSection({ filtered }: { filtered: Recommendation[] }) {
+  const priorityData = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const r of filtered) counts[r.priority] = (counts[r.priority] ?? 0) + 1;
+    return Object.entries(counts).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
+  }, [filtered]);
+
+  const statusData = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const r of filtered) { const key = r.status || "Unknown"; counts[key] = (counts[key] ?? 0) + 1; }
+    return Object.entries(counts).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
+  }, [filtered]);
+
+  const sourceData = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const r of filtered) counts[r.sourceType] = (counts[r.sourceType] ?? 0) + 1;
+    return Object.entries(counts).map(([name, value]) => ({ name, value }));
+  }, [filtered]);
+
+  const timelineData = useMemo(() => {
+    const buckets = [
+      { label: "Overdue", min: -Infinity as number, max: -1 as number },
+      { label: "0–3 mo", min: 0, max: 3 },
+      { label: "3–6 mo", min: 3, max: 6 },
+      { label: "6–12 mo", min: 6, max: 12 },
+      { label: "12–24 mo", min: 12, max: 24 },
+      { label: "24+ mo", min: 24, max: Infinity as number },
+      { label: "Unknown", min: null as null, max: null as null },
+    ];
+    return buckets.map(({ label, min, max }) => ({
+      label,
+      count: filtered.filter((r) => {
+        if (min === null) return r.monthsToRecert === null;
+        if (r.monthsToRecert === null) return false;
+        return r.monthsToRecert >= min && r.monthsToRecert < max!;
+      }).length,
+    }));
+  }, [filtered]);
+
+  const customerData = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const r of filtered) if (r.customer) counts[r.customer] = (counts[r.customer] ?? 0) + 1;
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 8)
+      .map(([name, count]) => ({ name: name.length > 20 ? name.slice(0, 18) + "…" : name, count }));
+  }, [filtered]);
+
+  const equipmentData = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const r of filtered) if (r.equipment) counts[r.equipment] = (counts[r.equipment] ?? 0) + 1;
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 8)
+      .map(([name, count]) => ({ name: name.length > 22 ? name.slice(0, 20) + "…" : name, count }));
+  }, [filtered]);
+
+  const upcoming = useMemo(() =>
+    [...filtered].filter((r) => r.monthsToRecert !== null)
+      .sort((a, b) => (a.monthsToRecert ?? 999) - (b.monthsToRecert ?? 999))
+      .slice(0, 10),
+    [filtered]
+  );
+
+  function timelineBarColor(label: string) {
+    if (label === "Overdue") return PALETTE.danger;
+    if (label === "0–3 mo") return PALETTE.warning;
+    if (label === "3–6 mo") return PALETTE.gold;
+    if (label === "6–12 mo") return PALETTE.teal;
+    if (label === "12–24 mo") return PALETTE.success;
+    return PALETTE.grey;
+  }
+
+  return (
+    <div>
+      {/* Row 1 — three donuts */}
+      <div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <ChartCard title="Priority Breakdown" subtitle="Filtered records by priority level">
+          {priorityData.length === 0 ? (
+            <div className="flex h-[220px] items-center justify-center text-sm text-muted-foreground">No data</div>
+          ) : (
+            <>
+              <ResponsiveContainer width="100%" height={220}>
+                <PieChart>
+                  <Pie data={priorityData} cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={3} dataKey="value" labelLine={false} label={renderCustomPieLabel}>
+                    {priorityData.map((e) => <Cell key={e.name} fill={PRIORITY_COLORS[e.name] ?? PALETTE.grey} />)}
+                  </Pie>
+                  <Tooltip content={<PieTooltip total={priorityData.reduce((s, d) => s + d.value, 0)} />} />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="mt-2 flex flex-wrap justify-center gap-3">
+                {priorityData.map((d) => (
+                  <div key={d.name} className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                    <span className="size-2.5 rounded-full" style={{ backgroundColor: PRIORITY_COLORS[d.name] ?? PALETTE.grey }} />
+                    {d.name}: <span className="font-bold text-foreground">{d.value}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </ChartCard>
+
+        <ChartCard title="Status Distribution" subtitle="Lifecycle status across filtered records">
+          {statusData.length === 0 ? (
+            <div className="flex h-[220px] items-center justify-center text-sm text-muted-foreground">No data</div>
+          ) : (
+            <>
+              <ResponsiveContainer width="100%" height={220}>
+                <PieChart>
+                  <Pie data={statusData} cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={3} dataKey="value" labelLine={false} label={renderCustomPieLabel}>
+                    {statusData.map((e) => <Cell key={e.name} fill={STATUS_COLORS[e.name] ?? PALETTE.grey} />)}
+                  </Pie>
+                  <Tooltip content={<PieTooltip total={statusData.reduce((s, d) => s + d.value, 0)} />} />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="mt-2 flex flex-wrap justify-center gap-3">
+                {statusData.map((d) => (
+                  <div key={d.name} className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                    <span className="size-2.5 rounded-full" style={{ backgroundColor: STATUS_COLORS[d.name] ?? PALETTE.grey }} />
+                    <span className="max-w-[120px] truncate">{d.name}:</span>
+                    <span className="font-bold text-foreground">{d.value}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </ChartCard>
+
+        <ChartCard title="Document Source Types" subtitle="Format distribution of ingested files">
+          {sourceData.length === 0 ? (
+            <div className="flex h-[220px] items-center justify-center text-sm text-muted-foreground">No data</div>
+          ) : (
+            <>
+              <ResponsiveContainer width="100%" height={220}>
+                <PieChart>
+                  <Pie data={sourceData} cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={3} dataKey="value" labelLine={false} label={renderCustomPieLabel}>
+                    {sourceData.map((e) => <Cell key={e.name} fill={SOURCE_COLORS[e.name] ?? PALETTE.grey} />)}
+                  </Pie>
+                  <Tooltip content={<PieTooltip total={sourceData.reduce((s, d) => s + d.value, 0)} />} />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="mt-2 flex flex-wrap justify-center gap-3">
+                {sourceData.map((d) => (
+                  <div key={d.name} className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                    <span className="size-2.5 rounded-full" style={{ backgroundColor: SOURCE_COLORS[d.name] ?? PALETTE.grey }} />
+                    {d.name}: <span className="font-bold text-foreground">{d.value}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </ChartCard>
+      </div>
+
+      {/* Row 2 — timeline + top customers */}
+      <div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <ChartCard title="Recertification Timeline" subtitle="How far out is each certificate from recertification?">
+          <ResponsiveContainer width="100%" height={260}>
+            <BarChart data={timelineData} barSize={32} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" vertical={false} />
+              <XAxis dataKey="label" tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }} axisLine={false} tickLine={false} />
+              <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }} axisLine={false} tickLine={false} />
+              <Tooltip content={<ChartTooltip />} />
+              <Bar dataKey="count" name="Records" radius={[6, 6, 0, 0]}>
+                {timelineData.map((e) => <Cell key={e.label} fill={timelineBarColor(e.label)} />)}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+          <div className="mt-3 flex flex-wrap gap-3">
+            {[
+              { label: "Overdue", color: PALETTE.danger },
+              { label: "0–3 mo", color: PALETTE.warning },
+              { label: "3–6 mo", color: PALETTE.gold },
+              { label: "6–12 mo", color: PALETTE.teal },
+              { label: "12–24 mo", color: PALETTE.success },
+              { label: "24+ mo", color: PALETTE.grey },
+            ].map(({ label, color }) => (
+              <div key={label} className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                <span className="size-2 rounded-sm" style={{ backgroundColor: color }} />
+                {label}
+              </div>
+            ))}
+          </div>
+        </ChartCard>
+
+        <ChartCard title="Top Customers by Records" subtitle="Customers with the most ingested certificates">
+          {customerData.length === 0 ? (
+            <div className="flex h-[260px] items-center justify-center text-sm text-muted-foreground">No customer data available</div>
+          ) : (
+            <ResponsiveContainer width="100%" height={260}>
+              <BarChart data={customerData} layout="vertical" barSize={18} margin={{ top: 4, right: 16, left: 4, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" horizontal={false} />
+                <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 10, fill: "var(--color-muted-foreground)" }} axisLine={false} tickLine={false} />
+                <Tooltip content={<ChartTooltip />} />
+                <Bar dataKey="count" name="Records" fill={PALETTE.navy} radius={[0, 6, 6, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </ChartCard>
+      </div>
+
+      {/* Row 3 — top equipment + upcoming recerts */}
+      <div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <ChartCard title="Top Equipment Types" subtitle="Most frequently appearing equipment">
+          {equipmentData.length === 0 ? (
+            <div className="flex h-[240px] items-center justify-center text-sm text-muted-foreground">No equipment data available</div>
+          ) : (
+            <ResponsiveContainer width="100%" height={240}>
+              <BarChart data={equipmentData} layout="vertical" barSize={18} margin={{ top: 4, right: 16, left: 4, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" horizontal={false} />
+                <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="name" width={130} tick={{ fontSize: 10, fill: "var(--color-muted-foreground)" }} axisLine={false} tickLine={false} />
+                <Tooltip content={<ChartTooltip />} />
+                <Bar dataKey="count" name="Records" fill={PALETTE.orange} radius={[0, 6, 6, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </ChartCard>
+
+        <ChartCard title="Upcoming Recertifications" subtitle="Next 10 records sorted by urgency">
+          {upcoming.length === 0 ? (
+            <div className="flex h-[240px] items-center justify-center text-sm text-muted-foreground">No upcoming recertifications</div>
+          ) : (
+            <div className="divide-y divide-border/30 overflow-hidden rounded-xl border border-border/40">
+              {upcoming.map((r) => <UpcomingRow key={r.id} rec={r} />)}
+            </div>
+          )}
+        </ChartCard>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main HomeTab ─────────────────────────────────────────────────────────────
+
+export function HomeTab({
+  recommendations,
+  summary,
+  isLoading,
+  isError,
+  onRefresh,
+  lastRefreshed,
+}: HomeTabProps) {
+  const [timeFilter, setTimeFilter] = useState<TimeFilter>("all");
+  const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>("all");
+  const [selectedClients, setSelectedClients] = useState<string[]>([]);
+  const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
+  const [selectedParts, setSelectedParts] = useState<string[]>([]);
+
+  // ── Sorted unique client names for dropdown ────────────────────────────────
+  const clientOptions = useMemo(() => {
+    return [...new Set(recommendations.map((r) => r.customer).filter(Boolean) as string[])]
+      .sort((a, b) => a.localeCompare(b));
+  }, [recommendations]);
+
+  // ── Sorted unique locations (from jobOrProject) for dropdown ──────────────
+  const locationOptions = useMemo(() => {
+    return [...new Set(recommendations.map((r) => r.location).filter(Boolean) as string[])]
+      .sort((a, b) => a.localeCompare(b));
+  }, [recommendations]);
+
+  // ── Sorted unique part numbers for dropdown ────────────────────────────
+  const partNumberOptions = useMemo(() => {
+    const all = recommendations.flatMap((r) => r.partNumbers.map((p) => p.number));
+    return [...new Set(all)].sort((a, b) => a.localeCompare(b));
+  }, [recommendations]);
+
+  // ── Apply filters ──────────────────────────────────────────────────────────
+  const filtered = useMemo(() => {
+    return recommendations.filter((r) => {
+      // Time filter
+      if (timeFilter === "overdue") {
+        if (r.monthsToRecert === null || r.monthsToRecert >= 0) return false;
+      } else if (timeFilter === "3m") {
+        if (r.monthsToRecert === null || r.monthsToRecert > 3 || r.monthsToRecert < 0) return false;
+      } else if (timeFilter === "6m") {
+        if (r.monthsToRecert === null || r.monthsToRecert > 6 || r.monthsToRecert < 0) return false;
+      } else if (timeFilter === "12m") {
+        if (r.monthsToRecert === null || r.monthsToRecert > 12 || r.monthsToRecert < 0) return false;
+      }
+
+      // Priority filter
+      if (priorityFilter !== "all" && r.priority !== priorityFilter) return false;
+
+      // Client name — match any of the selected clients
+      if (selectedClients.length > 0 && !selectedClients.includes(r.customer ?? "")) return false;
+
+      // Client location — match any of the selected locations
+      if (selectedLocations.length > 0 && !selectedLocations.includes(r.location ?? "")) return false;
+
+      // Part numbers — match any of the selected parts
+      if (selectedParts.length > 0 && !r.partNumbers.some((p) => selectedParts.includes(p.number))) return false;
+
+      return true;
+    });
+  }, [recommendations, timeFilter, priorityFilter, selectedClients, selectedLocations, selectedParts]);
+
+  // ── Derived metrics ────────────────────────────────────────────────────────
+  const metrics = useMemo(() => {
+    const recs = filtered;
+    const total = recs.length;
+    const high = recs.filter((r) => r.priority === "High").length;
+    const overdue = recs.filter((r) => r.status === "Expired / overdue").length;
+    const dueSoon = recs.filter(
+      (r) => r.monthsToRecert !== null && r.monthsToRecert >= 0 && r.monthsToRecert <= 6
+    ).length;
+    const customers = new Set(recs.map((r) => r.customer).filter(Boolean)).size;
+    const equipment = new Set(recs.map((r) => r.equipment).filter(Boolean)).size;
+    const avgAge =
+      recs.filter((r) => r.ageMonths !== null).length > 0
+        ? Math.round(
+          recs.filter((r) => r.ageMonths !== null).reduce((a, r) => a + (r.ageMonths ?? 0), 0) /
+          recs.filter((r) => r.ageMonths !== null).length
+        )
+        : null;
+    const parts = recs.reduce((a, r) => a + r.partNumbers.length, 0);
+    const highConf = recs.filter((r) => r.confidence === "High").length;
+    const extractionRate = total > 0 ? Math.round((highConf / total) * 100) : 0;
+
+    return { total, high, overdue, dueSoon, customers, equipment, avgAge, parts, extractionRate };
+  }, [filtered]);
+
+  // ── Priority chart data ────────────────────────────────────────────────────
+  const priorityData = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const r of filtered) {
+      counts[r.priority] = (counts[r.priority] ?? 0) + 1;
+    }
+    return Object.entries(counts)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value);
+  }, [filtered]);
+
+  // ── Status chart data ──────────────────────────────────────────────────────
+  const statusData = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const r of filtered) {
+      const key = r.status || "Unknown";
+      counts[key] = (counts[key] ?? 0) + 1;
+    }
+    return Object.entries(counts)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value);
+  }, [filtered]);
+
+  // ── Source type data ───────────────────────────────────────────────────────
+  const sourceData = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const r of filtered) {
+      counts[r.sourceType] = (counts[r.sourceType] ?? 0) + 1;
+    }
+    return Object.entries(counts).map(([name, value]) => ({ name, value }));
+  }, [filtered]);
+
+  // ── Recertification timeline bar chart ────────────────────────────────────
+  const timelineData = useMemo(() => {
+    const buckets = [
+      { label: "Overdue", min: -Infinity, max: -1 },
+      { label: "0–3 mo", min: 0, max: 3 },
+      { label: "3–6 mo", min: 3, max: 6 },
+      { label: "6–12 mo", min: 6, max: 12 },
+      { label: "12–24 mo", min: 12, max: 24 },
+      { label: "24+ mo", min: 24, max: Infinity },
+      { label: "Unknown", min: null, max: null },
+    ];
+    return buckets.map(({ label, min, max }) => ({
+      label,
+      count: filtered.filter((r) => {
+        if (min === null) return r.monthsToRecert === null;
+        if (r.monthsToRecert === null) return false;
+        return r.monthsToRecert >= (min as number) && r.monthsToRecert < (max as number);
+      }).length,
+    }));
+  }, [filtered]);
+
+  // ── Top customers bar chart ────────────────────────────────────────────────
+  const customerData = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const r of filtered) {
+      if (r.customer) counts[r.customer] = (counts[r.customer] ?? 0) + 1;
+    }
+    return Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8)
+      .map(([name, count]) => ({ name: name.length > 20 ? name.slice(0, 18) + "…" : name, count }));
+  }, [filtered]);
+
+  // ── Top equipment bar chart ────────────────────────────────────────────────
+  const equipmentData = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const r of filtered) {
+      if (r.equipment) counts[r.equipment] = (counts[r.equipment] ?? 0) + 1;
+    }
+    return Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8)
+      .map(([name, count]) => ({ name: name.length > 22 ? name.slice(0, 20) + "…" : name, count }));
+  }, [filtered]);
+
+  // ── Upcoming recertifications ──────────────────────────────────────────────
+  const upcoming = useMemo(() => {
+    return [...filtered]
+      .filter((r) => r.monthsToRecert !== null)
+      .sort((a, b) => (a.monthsToRecert ?? 999) - (b.monthsToRecert ?? 999))
+      .slice(0, 10);
+  }, [filtered]);
+
+  // ── Bar chart bar color helper ─────────────────────────────────────────────
+  function timelineBarColor(label: string) {
+    if (label === "Overdue") return PALETTE.danger;
+    if (label === "0–3 mo") return PALETTE.warning;
+    if (label === "3–6 mo") return PALETTE.gold;
+    if (label === "6–12 mo") return PALETTE.teal;
+    if (label === "12–24 mo") return PALETTE.success;
+    return PALETTE.grey;
+  }
+
+  const noData = !isLoading && !isError && recommendations.length === 0;
+  const isEmpty = !isLoading && !isError && filtered.length === 0 && recommendations.length > 0;
+
+  return (
+    <div className="mx-auto w-full max-w-[1600px] px-6 py-8">
+
+      {/* ── Page header ─────────────────────────────────────────────────── */}
+      <div className="mb-8 flex items-center justify-between">
+        <div>
+          <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-4 py-1.5 font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-primary">
+            <span className="size-1.5 animate-pulse rounded-full bg-primary" />
+            Live Overview · Cloud Platform
+          </div>
+          <h1 className="mt-4 font-display text-4xl font-black tracking-tight text-accent">
+            Operations <span className="text-primary italic">Dashboard</span>
+          </h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Real-time equipment lifecycle intelligence across all ingested certificates of conformance.
+          </p>
+        </div>
+        <div className="flex flex-col items-end gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onRefresh}
+            className="gap-2 border-border/50 bg-background/40"
+          >
+            <RefreshCw className="size-3.5" />
+            Refresh
+          </Button>
+          <div className="font-mono text-[10px] text-muted-foreground/60">
+            Updated {lastRefreshed.toLocaleTimeString()}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Loading skeleton ─────────────────────────────────────────────── */}
+      {isLoading && (
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div key={i} className="h-36 animate-pulse rounded-2xl bg-foreground/[0.04]" />
+          ))}
+        </div>
+      )}
+
+      {/* ── Error state ──────────────────────────────────────────────────── */}
+      {isError && (
+        <div className="flex flex-col items-center justify-center gap-4 py-24 text-center">
+          <div className="grid size-16 place-items-center rounded-full bg-destructive/10">
+            <AlertTriangle className="size-8 text-destructive/70" />
+          </div>
+          <p className="text-base font-semibold text-foreground">Could not load data</p>
+          <p className="text-sm text-muted-foreground">Ensure the FastAPI backend is running.</p>
+        </div>
+      )}
+
+      {/* ── No data state ────────────────────────────────────────────────── */}
+      {noData && (
+        <div className="flex flex-col items-center justify-center gap-4 py-24 text-center">
+          <div className="grid size-16 place-items-center rounded-full bg-foreground/[0.03]">
+            <BarChart3 className="size-8 text-muted-foreground/50" />
+          </div>
+          <p className="text-base font-semibold text-foreground">No data yet</p>
+          <p className="text-sm text-muted-foreground">
+            Ingest PDF / DOC / DOCX certificates of conformance to populate the dashboard.
+          </p>
+        </div>
+      )}
+
+      {!isLoading && !isError && recommendations.length > 0 && (
+        <>
+          {/* ── Filter bar ──────────────────────────────────────────────── */}
+          <FilterBar
+            timeFilter={timeFilter}
+            setTimeFilter={setTimeFilter}
+            priorityFilter={priorityFilter}
+            setPriorityFilter={setPriorityFilter}
+            selectedClients={selectedClients}
+            setSelectedClients={setSelectedClients}
+            selectedLocations={selectedLocations}
+            setSelectedLocations={setSelectedLocations}
+            selectedParts={selectedParts}
+            setSelectedParts={setSelectedParts}
+            clientOptions={clientOptions}
+            locationOptions={locationOptions}
+            partNumberOptions={partNumberOptions}
+            count={filtered.length}
+            total={recommendations.length}
+          />
+
+          {/* ── KPI Grid ────────────────────────────────────────────────── */}
+          <div className="mb-10 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+            <MetricCard
+              icon={<FileText className="size-5" />}
+              label="Total Records"
+              value={isLoading ? "—" : metrics.total}
+              sub={`${summary.filesProcessed} files processed`}
+              tone="default"
+            />
+            <MetricCard
+              icon={<ShieldAlert className="size-5" />}
+              label="High Priority"
+              value={isLoading ? "—" : metrics.high}
+              sub={
+                metrics.total > 0
+                  ? `${Math.round((metrics.high / metrics.total) * 100)}% of total`
+                  : "No records"
+              }
+              tone="danger"
+              trend={metrics.high > 0 ? "up" : "neutral"}
+            />
+            <MetricCard
+              icon={<AlertTriangle className="size-5" />}
+              label="Overdue"
+              value={isLoading ? "—" : metrics.overdue}
+              sub="Recertification expired"
+              tone="danger"
+              trend={metrics.overdue > 0 ? "up" : "neutral"}
+            />
+            <MetricCard
+              icon={<Clock className="size-5" />}
+              label="Due ≤6 Months"
+              value={isLoading ? "—" : metrics.dueSoon}
+              sub="Upcoming recertification"
+              tone="warning"
+              trend={metrics.dueSoon > 0 ? "up" : "neutral"}
+            />
+            <MetricCard
+              icon={<Users className="size-5" />}
+              label="Active Customers"
+              value={isLoading ? "—" : metrics.customers}
+              sub="Unique customers on file"
+              tone="navy"
+            />
+            <MetricCard
+              icon={<Wrench className="size-5" />}
+              label="Equipment Types"
+              value={isLoading ? "—" : metrics.equipment}
+              sub="Distinct equipment entries"
+              tone="primary"
+            />
+            <MetricCard
+              icon={<Package className="size-5" />}
+              label="Part Numbers"
+              value={isLoading ? "—" : metrics.parts}
+              sub="Across all certificates"
+              tone="default"
+            />
+            <MetricCard
+              icon={<Zap className="size-5" />}
+              label="Extraction Accuracy"
+              value={isLoading ? "—" : `${metrics.extractionRate}%`}
+              sub={`${metrics.total - metrics.high} high-confidence records`}
+              tone="success"
+              trend={metrics.extractionRate >= 80 ? "up" : "down"}
+            />
+          </div>
+
+          {/* ── Charts Row 1 ────────────────────────────────────────────── */}
+          <div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
+
+            {/* Priority Donut */}
+            <ChartCard title="Priority Breakdown" subtitle="Filtered records by priority level">
+              {priorityData.length === 0 ? (
+                <div className="flex h-[220px] items-center justify-center text-sm text-muted-foreground">
+                  No data
+                </div>
+              ) : (
+                <>
+                  <ResponsiveContainer width="100%" height={220}>
+                    <PieChart>
+                      <Pie
+                        data={priorityData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={55}
+                        outerRadius={85}
+                        paddingAngle={3}
+                        dataKey="value"
+                        labelLine={false}
+                        label={renderCustomPieLabel}
+                      >
+                        {priorityData.map((entry) => (
+                          <Cell
+                            key={entry.name}
+                            fill={PRIORITY_COLORS[entry.name] ?? PALETTE.grey}
+                          />
+                        ))}
+                      </Pie>
+                      <Tooltip content={<PieTooltip total={priorityData.reduce((s, d) => s + d.value, 0)} />} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="mt-2 flex flex-wrap justify-center gap-3">
+                    {priorityData.map((d) => (
+                      <div key={d.name} className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                        <span
+                          className="size-2.5 rounded-full"
+                          style={{ backgroundColor: PRIORITY_COLORS[d.name] ?? PALETTE.grey }}
+                        />
+                        {d.name}: <span className="font-bold text-foreground">{d.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </ChartCard>
+
+            {/* Status Donut */}
+            <ChartCard title="Status Distribution" subtitle="Lifecycle status across filtered records">
+              {statusData.length === 0 ? (
+                <div className="flex h-[220px] items-center justify-center text-sm text-muted-foreground">
+                  No data
+                </div>
+              ) : (
+                <>
+                  <ResponsiveContainer width="100%" height={220}>
+                    <PieChart>
+                      <Pie
+                        data={statusData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={55}
+                        outerRadius={85}
+                        paddingAngle={3}
+                        dataKey="value"
+                        labelLine={false}
+                        label={renderCustomPieLabel}
+                      >
+                        {statusData.map((entry) => (
+                          <Cell
+                            key={entry.name}
+                            fill={STATUS_COLORS[entry.name] ?? PALETTE.grey}
+                          />
+                        ))}
+                      </Pie>
+                      <Tooltip content={<PieTooltip total={statusData.reduce((s, d) => s + d.value, 0)} />} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="mt-2 flex flex-wrap justify-center gap-3">
+                    {statusData.map((d) => (
+                      <div key={d.name} className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                        <span
+                          className="size-2.5 rounded-full"
+                          style={{ backgroundColor: STATUS_COLORS[d.name] ?? PALETTE.grey }}
+                        />
+                        <span className="max-w-[120px] truncate">{d.name}:</span>
+                        <span className="font-bold text-foreground">{d.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </ChartCard>
+
+            {/* Source Type Donut */}
+            <ChartCard title="Document Source Types" subtitle="Format distribution of ingested files">
+              {sourceData.length === 0 ? (
+                <div className="flex h-[220px] items-center justify-center text-sm text-muted-foreground">
+                  No data
+                </div>
+              ) : (
+                <>
+                  <ResponsiveContainer width="100%" height={220}>
+                    <PieChart>
+                      <Pie
+                        data={sourceData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={55}
+                        outerRadius={85}
+                        paddingAngle={3}
+                        dataKey="value"
+                        labelLine={false}
+                        label={renderCustomPieLabel}
+                      >
+                        {sourceData.map((entry) => (
+                          <Cell
+                            key={entry.name}
+                            fill={SOURCE_COLORS[entry.name] ?? PALETTE.grey}
+                          />
+                        ))}
+                      </Pie>
+                      <Tooltip content={<PieTooltip total={sourceData.reduce((s, d) => s + d.value, 0)} />} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="mt-2 flex flex-wrap justify-center gap-3">
+                    {sourceData.map((d) => (
+                      <div key={d.name} className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                        <span
+                          className="size-2.5 rounded-full"
+                          style={{ backgroundColor: SOURCE_COLORS[d.name] ?? PALETTE.grey }}
+                        />
+                        {d.name}: <span className="font-bold text-foreground">{d.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </ChartCard>
+          </div>
+
+          {/* ── Charts Row 2 ────────────────────────────────────────────── */}
+          <div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
+
+            {/* Recertification Timeline */}
+            <ChartCard
+              title="Recertification Timeline"
+              subtitle="How far out is each certificate from recertification?"
+            >
+              <ResponsiveContainer width="100%" height={260}>
+                <BarChart data={timelineData} barSize={32} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" vertical={false} />
+                  <XAxis
+                    dataKey="label"
+                    tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <YAxis
+                    allowDecimals={false}
+                    tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <Tooltip content={<ChartTooltip />} />
+                  <Bar dataKey="count" name="Records" radius={[6, 6, 0, 0]}>
+                    {timelineData.map((entry) => (
+                      <Cell key={entry.label} fill={timelineBarColor(entry.label)} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+              {/* Color legend */}
+              <div className="mt-3 flex flex-wrap gap-3">
+                {[
+                  { label: "Overdue", color: PALETTE.danger },
+                  { label: "0–3 mo", color: PALETTE.warning },
+                  { label: "3–6 mo", color: PALETTE.gold },
+                  { label: "6–12 mo", color: PALETTE.teal },
+                  { label: "12–24 mo", color: PALETTE.success },
+                  { label: "24+ mo", color: PALETTE.grey },
+                ].map(({ label, color }) => (
+                  <div key={label} className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                    <span className="size-2 rounded-sm" style={{ backgroundColor: color }} />
+                    {label}
+                  </div>
+                ))}
+              </div>
+            </ChartCard>
+
+            {/* Top Customers */}
+            <ChartCard
+              title="Top Customers by Records"
+              subtitle="Customers with the most ingested certificates"
+            >
+              {customerData.length === 0 ? (
+                <div className="flex h-[260px] items-center justify-center text-sm text-muted-foreground">
+                  No customer data available
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={260}>
+                  <BarChart
+                    data={customerData}
+                    layout="vertical"
+                    barSize={18}
+                    margin={{ top: 4, right: 16, left: 4, bottom: 0 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" horizontal={false} />
+                    <XAxis
+                      type="number"
+                      allowDecimals={false}
+                      tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      type="category"
+                      dataKey="name"
+                      width={120}
+                      tick={{ fontSize: 10, fill: "var(--color-muted-foreground)" }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <Tooltip content={<ChartTooltip />} />
+                    <Bar dataKey="count" name="Records" fill={PALETTE.navy} radius={[0, 6, 6, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </ChartCard>
+          </div>
+
+          {/* ── Charts Row 3 ────────────────────────────────────────────── */}
+          <div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
+
+            {/* Top Equipment */}
+            <ChartCard
+              title="Top Equipment Types"
+              subtitle="Most frequently appearing equipment"
+            >
+              {equipmentData.length === 0 ? (
+                <div className="flex h-[240px] items-center justify-center text-sm text-muted-foreground">
+                  No equipment data available
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={240}>
+                  <BarChart
+                    data={equipmentData}
+                    layout="vertical"
+                    barSize={18}
+                    margin={{ top: 4, right: 16, left: 4, bottom: 0 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" horizontal={false} />
+                    <XAxis
+                      type="number"
+                      allowDecimals={false}
+                      tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      type="category"
+                      dataKey="name"
+                      width={130}
+                      tick={{ fontSize: 10, fill: "var(--color-muted-foreground)" }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <Tooltip content={<ChartTooltip />} />
+                    <Bar dataKey="count" name="Records" fill={PALETTE.orange} radius={[0, 6, 6, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </ChartCard>
+
+            {/* Upcoming Recertifications */}
+            <ChartCard
+              title="Upcoming Recertifications"
+              subtitle="Next 10 records sorted by urgency"
+            >
+              {upcoming.length === 0 ? (
+                <div className="flex h-[240px] items-center justify-center text-sm text-muted-foreground">
+                  {isEmpty ? "No results match current filters" : "No upcoming recertifications"}
+                </div>
+              ) : (
+                <div className="divide-y divide-border/30 overflow-hidden rounded-xl border border-border/40">
+                  {upcoming.map((r) => (
+                    <UpcomingRow key={r.id} rec={r} />
+                  ))}
+                </div>
+              )}
+            </ChartCard>
+          </div>
+
+          {/* ── Summary strip ───────────────────────────────────────────── */}
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border/30 bg-foreground/[0.015] px-6 py-4 text-xs text-muted-foreground">
+            <div className="flex flex-wrap items-center gap-6">
+              <div>
+                Showing{" "}
+                <span className="font-bold text-foreground">{metrics.total}</span> of{" "}
+                <span className="font-bold text-foreground">{recommendations.length}</span> records
+              </div>
+              <div className="size-1 rounded-full bg-border" />
+              <div>
+                Lifecycle rule:{" "}
+                <span className="font-mono font-bold text-primary">60-month recertification</span>
+              </div>
+              <div className="size-1 rounded-full bg-border" />
+              <div className="font-mono text-[10px] uppercase tracking-wider">
+                As of {summary.asOf}
+              </div>
+            </div>
+            <div className="font-mono text-[10px] uppercase tracking-[0.2em] opacity-50">
+              WOM_Lifecycle · v1.0.0
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}

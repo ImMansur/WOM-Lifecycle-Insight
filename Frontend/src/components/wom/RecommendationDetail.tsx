@@ -1,0 +1,1021 @@
+import { useState, useMemo } from "react";
+import { useQueryClient, useMutation } from "@tanstack/react-query";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Separator } from "@/components/ui/separator";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { StatusBadge, PriorityChip } from "./StatusBadge";
+import type { Recommendation } from "@/lib/wom-data";
+import { updateRecommendation, suggestNextSteps } from "@/lib/api";
+import type { RecommendationPatch, Action } from "@/lib/api";
+import {
+  FileText,
+  Mail,
+  ClipboardList,
+  Wrench,
+  Calendar,
+  Hash,
+  Building2,
+  Package,
+  AlertTriangle,
+  Copy,
+  Check,
+  Pencil,
+  X,
+  Save,
+  CheckCircle2,
+  MessageSquare,
+  Sparkles,
+  Loader2,
+} from "lucide-react";
+
+function buildPlainText(rec: Recommendation): string {
+  const customer = rec.customer ?? "Valued Customer";
+  const equipment = rec.equipment ?? "your WOM-manufactured equipment";
+  const partList =
+    rec.partNumbers.length > 0
+      ? rec.partNumbers.map((p) => `  • ${p.number}${p.description ? ` – ${p.description}` : ""}`).join("\n")
+      : "  —";
+  const serialList = rec.serials.length > 0 ? rec.serials.join(", ") : "—";
+
+  let urgency = "";
+  if (rec.status === "Expired / overdue") {
+    const m = Math.abs(rec.monthsToRecert ?? 0);
+    urgency = `This equipment is currently ${m} month${m !== 1 ? "s" : ""} past its 5-year recertification window. Prompt action is strongly recommended to maintain API compliance and operational safety. Please treat this as an urgent matter.`;
+  } else if (rec.status === "Due soon") {
+    urgency = `This equipment is approaching its 5-year recertification window in approximately ${rec.monthsToRecert} month${rec.monthsToRecert !== 1 ? "s" : ""}. We recommend scheduling recertification at your earliest convenience to avoid operational disruption.`;
+  } else {
+    urgency = `This equipment is currently within its mid-cycle service window. Scheduling a proactive inspection or recertification now may reduce lead times and ensure uninterrupted operations.`;
+  }
+
+  const date = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+  const subject = `Recertification Notice – ${equipment}${rec.salesOrder ? ` | SO ${rec.salesOrder}` : ""}`;
+
+  return `Subject: ${subject}
+To: ${customer}
+From: WOM Service Team <service@womgroup.com>
+Date: ${date}
+
+Dear ${customer},
+
+I hope this message finds you well.
+
+I am reaching out on behalf of Worldwide Oilfield Machine (WOM) regarding equipment we manufactured for your organization.
+${rec.salesOrder ? `\nWOM Sales Order:         ${rec.salesOrder}` : ""}${rec.purchaseOrder ? `\nCustomer Purchase Order: ${rec.purchaseOrder}` : ""}
+
+Our lifecycle management system has identified the following equipment as requiring attention:
+
+  Equipment:           ${equipment}
+  Certificate Date:    ${rec.certificateDate ?? "—"}
+  Recertification Due: ${rec.recertificationDue ?? "—"}
+  Current Status:      ${rec.status}
+  Part Number(s):
+${partList}
+  Serial / Lot:        ${serialList}
+
+${urgency}
+
+WOM offers comprehensive recertification services for all equipment we manufacture. Our team can coordinate collection, full recertification, pressure testing, and re-delivery with minimal downtime to your operations.
+
+To schedule service or discuss your requirements, please contact us:
+
+  📞  +1 (713) 937-9200
+  ✉   service@womgroup.com
+  🌐  www.womgroup.com
+  📍  10820 Tanner Road, Houston, TX 77041
+
+We value your continued partnership and look forward to supporting your operational needs.
+
+Warm regards,
+
+WOM Service & Recertification Team
+Worldwide Oilfield Machine
+© 2026 Worldwide Oilfield Machine. All Rights Reserved.`;
+}
+
+function EmailDraftDialog({
+  rec,
+  open,
+  onOpenChange,
+}: {
+  rec: Recommendation;
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  const customer = rec.customer ?? "Valued Customer";
+  const equipment = rec.equipment ?? "your WOM-manufactured equipment";
+  const subject = `Recertification Notice – ${equipment}${rec.salesOrder ? ` | SO ${rec.salesOrder}` : ""}`;
+  const date = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+
+  let urgency = "";
+  let urgencyTone = "text-foreground/80";
+  if (rec.status === "Expired / overdue") {
+    const m = Math.abs(rec.monthsToRecert ?? 0);
+    urgency = `This equipment is currently ${m} month${m !== 1 ? "s" : ""} past its 5-year recertification window. Prompt action is strongly recommended to maintain API compliance and operational safety. Please treat this as an urgent matter.`;
+    urgencyTone = "text-destructive";
+  } else if (rec.status === "Due soon") {
+    urgency = `This equipment is approaching its 5-year recertification window in approximately ${rec.monthsToRecert} month${rec.monthsToRecert !== 1 ? "s" : ""}. We recommend scheduling recertification at your earliest convenience to avoid operational disruption.`;
+    urgencyTone = "text-warning";
+  } else {
+    urgency = `This equipment is currently within its mid-cycle service window. Scheduling a proactive inspection or recertification now may reduce lead times and ensure uninterrupted operations.`;
+  }
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(buildPlainText(rec));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="w-[min(90vw,760px)] max-w-none bg-surface border-border p-0 gap-0 overflow-hidden">
+        {/* Header bar */}
+        <div className="bg-accent px-6 py-4 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="size-8 rounded-full bg-white/10 grid place-items-center">
+              <Mail className="size-4 text-white" />
+            </div>
+            <div>
+              <DialogTitle className="text-sm font-bold text-white tracking-tight">
+                Draft Customer Email
+              </DialogTitle>
+              <p className="text-[11px] text-white/60 font-mono mt-0.5">
+                AI-generated · review before sending
+              </p>
+            </div>
+          </div>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => onOpenChange(false)}
+            className="h-8 px-3 text-white/80 hover:text-white hover:bg-white/10 text-xs font-bold"
+          >
+            Close
+          </Button>
+        </div>
+
+        {/* Meta fields */}
+        <div className="border-b border-border bg-background/40 divide-y divide-border/40 shrink-0">
+          <div className="flex items-start gap-4 px-6 py-2.5">
+            <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground w-16 shrink-0 pt-0.5">Subject</span>
+            <span className="text-sm font-semibold text-foreground break-words min-w-0">{subject}</span>
+          </div>
+          <div className="grid grid-cols-2 divide-x divide-border/40">
+            <div className="flex items-center gap-4 px-6 py-2.5">
+              <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground w-16 shrink-0">To</span>
+              <span className="text-sm text-foreground font-medium truncate">{customer}</span>
+            </div>
+            <div className="flex items-center gap-4 px-6 py-2.5">
+              <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground w-16 shrink-0">From</span>
+              <span className="text-sm text-foreground font-mono truncate">service@womgroup.com</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-4 px-6 py-2.5">
+            <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground w-16 shrink-0">Date</span>
+            <span className="text-sm text-muted-foreground">{date}</span>
+          </div>
+        </div>
+
+        {/* Scrollable body */}
+        <div className="overflow-y-auto max-h-[50vh] px-8 py-6 space-y-4 text-sm text-foreground leading-relaxed">
+          <p>Dear <span className="font-semibold">{customer}</span>,</p>
+          <p>I hope this message finds you well.</p>
+          <p>
+            I am reaching out on behalf of <span className="font-semibold">Worldwide Oilfield Machine (WOM)</span> regarding
+            equipment we manufactured for your organization.
+          </p>
+
+          {/* Equipment table */}
+          <div className="rounded-xl border border-border bg-background/50 overflow-hidden">
+            <div className="bg-foreground/[0.03] px-4 py-2.5 text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground border-b border-border">
+              Equipment Details
+            </div>
+            <div className="divide-y divide-border/50">
+              {[
+                { label: "Equipment", value: equipment },
+                ...(rec.salesOrder ? [{ label: "WOM Sales Order", value: rec.salesOrder }] : []),
+                ...(rec.purchaseOrder ? [{ label: "Customer PO", value: rec.purchaseOrder }] : []),
+                { label: "Certificate Date", value: rec.certificateDate ?? "—" },
+                { label: "Recertification Due", value: rec.recertificationDue ?? "—" },
+                { label: "Current Status", value: rec.status },
+              ].map(({ label, value }) => (
+                <div key={label} className="grid grid-cols-[160px_1fr] gap-4 px-4 py-2.5">
+                  <span className="text-xs font-semibold text-muted-foreground shrink-0">{label}</span>
+                  <span className="text-sm font-mono text-foreground break-all">{value}</span>
+                </div>
+              ))}
+              {rec.partNumbers.length > 0 && (
+                <div className="grid grid-cols-[160px_1fr] gap-4 px-4 py-2.5">
+                  <span className="text-xs font-semibold text-muted-foreground shrink-0 pt-0.5">Part Number(s)</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {rec.partNumbers.map((p) => (
+                      <span key={p.number} className="rounded bg-background border border-border px-2 py-0.5 font-mono text-xs text-foreground">
+                        {p.number}{p.description ? ` – ${p.description}` : ""}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {rec.serials.length > 0 && (
+                <div className="grid grid-cols-[160px_1fr] gap-4 px-4 py-2.5">
+                  <span className="text-xs font-semibold text-muted-foreground shrink-0 pt-0.5">Serial / Lot</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {rec.serials.map((s) => (
+                      <span key={s} className="rounded bg-accent/10 border border-accent/30 px-2 py-0.5 font-mono text-xs text-accent">{s}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <p className={`font-medium ${urgencyTone}`}>{urgency}</p>
+
+          <p>
+            WOM offers comprehensive recertification services for all equipment we manufacture. Our team
+            can coordinate collection, full recertification, pressure testing, and re-delivery with
+            minimal downtime to your operations.
+          </p>
+
+          <p>To schedule service or discuss your requirements, please contact us:</p>
+
+          <div className="rounded-xl border border-border bg-background/50 px-5 py-4 space-y-2">
+            {[
+              { icon: "📞", text: "+1 (713) 937-9200" },
+              { icon: "✉", text: "service@womgroup.com" },
+              { icon: "🌐", text: "www.womgroup.com" },
+              { icon: "📍", text: "10820 Tanner Road, Houston, TX 77041" },
+            ].map(({ icon, text }) => (
+              <div key={text} className="flex items-center gap-3 text-sm">
+                <span className="text-base">{icon}</span>
+                <span className="font-mono text-foreground/80">{text}</span>
+              </div>
+            ))}
+          </div>
+
+          <p>We value your continued partnership and look forward to supporting your operational needs.</p>
+
+          <div className="pt-2 border-t border-border/40">
+            <p className="font-semibold text-foreground">Warm regards,</p>
+            <p className="mt-2 text-muted-foreground">WOM Service &amp; Recertification Team</p>
+            <p className="text-muted-foreground font-semibold">Worldwide Oilfield Machine</p>
+            <p className="text-[11px] text-muted-foreground/60 mt-2">© 2026 Worldwide Oilfield Machine. All Rights Reserved.</p>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="border-t border-border px-6 py-3 flex items-center justify-between bg-background/30 shrink-0">
+          <p className="text-[11px] text-muted-foreground">Review and personalise before sending via your email client.</p>
+          <Button
+            size="sm"
+            onClick={handleCopy}
+            className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-xs h-8"
+          >
+            {copied ? (
+              <><Check className="mr-1.5 size-3.5" />Copied!</>
+            ) : (
+              <><Copy className="mr-1.5 size-3.5" />Copy Email</>
+            )}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function QuoteDraftDialog({
+  rec,
+  open,
+  onOpenChange,
+}: {
+  rec: Recommendation;
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+}) {
+  const customer = rec.customer ?? "Valued Customer";
+  const equipment = rec.equipment ?? "WOM Equipment";
+  const date = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+  const validUntil = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+
+  const quoteNumber = useMemo(() => `WOM-Q-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`, []);
+
+  const lineItems = useMemo(() => {
+    const base = [
+      { description: "Full 5-Year Recertification Service", detail: "Disassembly, inspection, NDT, reassembly & full documentation per API 6A / 16A", qty: 1, unitPrice: 4800 },
+      { description: "Hydrostatic & Pneumatic Pressure Testing", detail: "Full pressure test matrix per API specification — witnessed & certified", qty: 1, unitPrice: 1200 },
+      { description: "OEM Seal & Elastomer Replacement Kit", detail: "All primary and secondary sealing systems replaced with OEM-grade components", qty: 1, unitPrice: 875 },
+      { description: "Certificate of Conformance (COC) Documentation", detail: "Certified documentation package: material certs, test records, and inspection reports", qty: 1, unitPrice: 250 },
+      { description: "Return Freight, Crating & Insurance", detail: "Door-to-door logistics coordination with full cargo insurance", qty: 1, unitPrice: 420 },
+    ];
+    if (rec.status === "Expired / overdue") {
+      base.unshift({ description: "RUSH Processing Surcharge", detail: "Expedited 5–7 business day turnaround for overdue equipment", qty: 1, unitPrice: 650 });
+    }
+    return base;
+  }, [rec.status]);
+
+  const subtotal = lineItems.reduce((s, i) => s + i.qty * i.unitPrice, 0);
+  const tax = subtotal * 0.0825;
+  const total = subtotal + tax;
+
+  const fmt = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 2 });
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="w-[min(90vw,780px)] max-w-none bg-surface border-border p-0 gap-0 overflow-hidden flex flex-col">
+        {/* Header */}
+        <div className="bg-accent px-6 py-4 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="size-8 rounded-full bg-white/10 grid place-items-center">
+              <ClipboardList className="size-4 text-white" />
+            </div>
+            <div>
+              <DialogTitle className="text-sm font-bold text-white tracking-tight">Service Quote</DialogTitle>
+              <p className="text-[11px] text-white/60 font-mono mt-0.5">AI-generated · demo only · not a real quote</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="rounded border border-amber/40 bg-amber/20 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-amber">Demo</span>
+            <Button size="sm" variant="ghost" onClick={() => onOpenChange(false)} className="h-8 px-3 text-white/80 hover:text-white hover:bg-white/10 text-xs font-bold">Close</Button>
+          </div>
+        </div>
+
+        {/* Quote meta */}
+        <div className="border-b border-border bg-background/30 px-6 py-4 grid grid-cols-2 gap-6 shrink-0">
+          <div className="space-y-3">
+            <div>
+              <div className="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground mb-1">Bill To</div>
+              <div className="text-sm font-semibold text-foreground">{customer}</div>
+            </div>
+            <div>
+              <div className="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground mb-1">Equipment</div>
+              <div className="text-xs text-foreground/80 leading-snug line-clamp-2">{equipment}</div>
+            </div>
+          </div>
+          <div className="space-y-2 text-right">
+            <div>
+              <div className="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground mb-1">Quote #</div>
+              <div className="text-sm font-mono font-bold text-foreground">{quoteNumber}</div>
+            </div>
+            <div className="grid grid-cols-2 gap-3 text-left">
+              <div>
+                <div className="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground mb-1">Date</div>
+                <div className="text-xs text-foreground">{date}</div>
+              </div>
+              <div>
+                <div className="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground mb-1">Valid Until</div>
+                <div className="text-xs text-foreground">{validUntil}</div>
+              </div>
+            </div>
+            {rec.salesOrder && (
+              <div>
+                <div className="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground mb-1">Ref SO</div>
+                <div className="text-xs font-mono text-foreground">{rec.salesOrder}</div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Line items */}
+        <div className="overflow-y-auto max-h-[38vh] shrink-0">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-foreground/[0.04] border-b border-border">
+                <th className="text-left px-6 py-2.5 text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground">Description</th>
+                <th className="text-center px-4 py-2.5 text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground w-16">Qty</th>
+                <th className="text-right px-6 py-2.5 text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground w-32">Unit Price</th>
+                <th className="text-right px-6 py-2.5 text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground w-32">Amount</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border/50">
+              {lineItems.map((item, i) => (
+                <tr key={i} className="hover:bg-foreground/[0.02]">
+                  <td className="px-6 py-3">
+                    <div className="font-semibold text-foreground text-xs">{item.description}</div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5 leading-snug">{item.detail}</div>
+                  </td>
+                  <td className="px-4 py-3 text-center font-mono text-xs text-foreground">{item.qty}</td>
+                  <td className="px-6 py-3 text-right font-mono text-xs text-foreground">${fmt(item.unitPrice)}</td>
+                  <td className="px-6 py-3 text-right font-mono text-xs font-semibold text-foreground">${fmt(item.qty * item.unitPrice)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Totals */}
+        <div className="border-t border-border bg-background/30 px-6 py-4 flex justify-end shrink-0">
+          <div className="w-64 space-y-1.5">
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>Subtotal</span><span className="font-mono">${fmt(subtotal)}</span>
+            </div>
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>Sales Tax (8.25% TX)</span><span className="font-mono">${fmt(tax)}</span>
+            </div>
+            <div className="flex justify-between text-sm font-bold text-foreground border-t border-border pt-2">
+              <span>Total (USD)</span><span className="font-mono text-primary">${fmt(total)}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Demo disclaimer */}
+        <div className="border-t border-amber/20 px-6 py-3 bg-amber/5 shrink-0">
+          <p className="text-[11px] text-amber/80">
+            ⚠ This is an AI-generated demo quote for illustration purposes only. Pricing is not binding — real quotes will be produced via WOM's quoting system.
+          </p>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function Field({
+  label,
+  value,
+  mono = false,
+}: {
+  label: string;
+  value: React.ReactNode;
+  mono?: boolean;
+}) {
+  return (
+    <div className="space-y-1">
+      <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+        {label}
+      </div>
+      <div className={mono ? "font-mono text-sm text-foreground" : "text-sm text-foreground"}>
+        {value ?? <span className="text-muted-foreground">—</span>}
+      </div>
+    </div>
+  );
+}
+
+function AiSuggestionsInline({ actionId }: { actionId: string | undefined }) {
+  const [steps, setSteps] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function generate() {
+    if (!actionId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await suggestNextSteps(actionId);
+      setSteps(result);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground flex items-center gap-1.5">
+          <Sparkles className="size-3.5 text-primary" /> AI Next Steps
+        </span>
+        <button
+          onClick={generate}
+          disabled={loading || !actionId}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/5 px-2.5 py-1 text-[11px] font-bold text-primary hover:bg-primary/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >
+          {loading
+            ? <><Loader2 className="size-3 animate-spin" /> Generating…</>
+            : <><Sparkles className="size-3" /> {steps.length ? "Regenerate" : "Generate"}</>
+          }
+        </button>
+      </div>
+      {error && (
+        <p className="rounded-lg border border-destructive/30 bg-destructive/8 px-3 py-2 text-xs text-destructive">{error}</p>
+      )}
+      {steps.length > 0 && (
+        <ol className="space-y-2">
+          {steps.map((step, i) => (
+            <li key={i} className="flex items-start gap-3 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3">
+              <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/20 text-[10px] font-black text-primary">
+                {i + 1}
+              </span>
+              <span className="text-sm text-foreground leading-snug">{step}</span>
+            </li>
+          ))}
+        </ol>
+      )}
+      {!loading && steps.length === 0 && !error && (
+        <p className="text-xs text-muted-foreground/50 italic">Click "Generate" for AI-suggested next steps.</p>
+      )}
+    </div>
+  );
+}
+
+export function RecommendationDetail({
+  rec,
+  open,
+  onOpenChange,
+  linkedAction,
+}: {
+  rec: Recommendation | null;
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  linkedAction?: Action | null;
+}) {
+  const [emailOpen, setEmailOpen] = useState(false);
+  const [quoteOpen, setQuoteOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState<RecommendationPatch>({});
+  const qc = useQueryClient();
+
+  const saveMutation = useMutation({
+    mutationFn: (patch: RecommendationPatch) => updateRecommendation(rec!.id, patch),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["recommendations"] });
+      setEditing(false);
+      setDraft({});
+    },
+  });
+
+  if (!rec) return null;
+  const overdue = rec.status === "Expired / overdue";
+  const actionable = rec.status === "Expired / overdue" || rec.status === "Due soon";
+  const withinLifecycle = !actionable;
+  const needsReview = rec.confidence === "Low" || rec.extractionStatus === "Needs OCR / manual review";
+
+  // Fields missing from the original extraction
+  const missingFields = [
+    !rec.customer && "Customer",
+    !rec.equipment && "Equipment",
+    !rec.salesOrder && "Sales Order",
+    !rec.certificateDate && "Certificate Date",
+    rec.partNumbers.length === 0 && "Part Numbers",
+    rec.serials.length === 0 && "Serials",
+  ].filter(Boolean) as string[];
+
+  function startEditing() {
+    setDraft({
+      customer: rec!.customer ?? "",
+      salesOrder: rec!.salesOrder ?? "",
+      purchaseOrder: rec!.purchaseOrder ?? "",
+      jobOrProject: rec!.jobOrProject ?? "",
+      location: rec!.location ?? "",
+      equipment: rec!.equipment ?? "",
+      certificateDate: rec!.certificateDate ?? "",
+      serials: rec!.serials,
+      notes: rec!.notes ?? "",
+    });
+    setEditing(true);
+  }
+
+  function cancelEditing() {
+    setEditing(false);
+    setDraft({});
+    saveMutation.reset();
+  }
+
+  function handleSave() {
+    // Strip empty strings → omit from patch (keep original value)
+    const patch: RecommendationPatch = {};
+    const d = draft as Record<string, unknown>;
+    for (const [k, v] of Object.entries(d)) {
+      if (k === "serials") {
+        patch.serials = (v as string[]).filter(Boolean);
+      } else if (typeof v === "string" && v.trim() !== "") {
+        (patch as Record<string, unknown>)[k] = v.trim();
+      }
+    }
+    saveMutation.mutate(patch);
+  }
+
+  function field(key: keyof RecommendationPatch, label: string, multiline = false) {
+    const val = (draft as Record<string, unknown>)[key] as string ?? "";
+    const original = (rec as unknown as Record<string, unknown>)[key];
+    const isMissing = !original;
+    return (
+      <div className="space-y-1">
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{label}</span>
+          {isMissing && (
+            <span className="flex items-center gap-0.5 rounded bg-warning/15 px-1 py-px text-[9px] font-bold text-warning uppercase tracking-wide">
+              <AlertTriangle className="size-2.5" /> missing
+            </span>
+          )}
+        </div>
+        {multiline ? (
+          <Textarea
+            value={val}
+            onChange={(e) => setDraft((p) => ({ ...p, [key]: e.target.value }))}
+            rows={2}
+            className="resize-none text-sm font-mono bg-background/60 border-border/60 focus:border-primary/50"
+            placeholder={`Enter ${label.toLowerCase()}…`}
+          />
+        ) : (
+          <Input
+            value={val}
+            onChange={(e) => setDraft((p) => ({ ...p, [key]: e.target.value }))}
+            className={`h-8 text-sm font-mono bg-background/60 border-border/60 focus:border-primary/50 ${isMissing ? "border-warning/50 focus:border-warning" : ""}`}
+            placeholder={`Enter ${label.toLowerCase()}…`}
+          />
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <Sheet open={open} onOpenChange={(v) => { if (!v) cancelEditing(); onOpenChange(v); }}>
+        <SheetContent
+          side="right"
+          className="w-full overflow-y-auto border-l border-border bg-surface p-0 sm:max-w-[640px]"
+        >
+          <div className="sticky top-0 z-10 border-b border-border bg-surface/95 px-6 py-5 backdrop-blur">
+            <SheetHeader className="space-y-3 text-left">
+              <div className="flex items-center gap-2">
+                <PriorityChip priority={rec.priority} />
+                <StatusBadge status={rec.status} />
+                {needsReview && !editing && (
+                  <span className="flex items-center gap-1 rounded-full border border-warning/30 bg-warning/10 px-2 py-0.5 text-[10px] font-bold text-warning">
+                    <AlertTriangle className="size-3" />
+                    {missingFields.length > 0 ? `${missingFields.length} field${missingFields.length > 1 ? "s" : ""} missing` : "Low confidence"}
+                  </span>
+                )}
+                {!needsReview && !editing && (
+                  <span className="flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-500">
+                    <CheckCircle2 className="size-3" /> Verified
+                  </span>
+                )}
+                <span className="ml-auto font-mono text-xs text-muted-foreground">
+                  {rec.sourceType}
+                </span>
+              </div>
+              <SheetTitle className="font-display text-xl leading-tight text-foreground">
+                {rec.equipment ?? rec.sourceFile}
+              </SheetTitle>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <FileText className="size-3.5" />
+                <span className="font-mono truncate">{rec.sourceFile}</span>
+              </div>
+              {rec.convertedDocx && (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <FileText className="size-3.5 text-primary/50" />
+                  <span className="text-primary/70">Converted:</span>
+                  <span className="font-mono truncate">{rec.convertedDocx}</span>
+                </div>
+              )}
+            </SheetHeader>
+          </div>
+
+          {/* ── EDIT MODE ──────────────────────────────────────────────── */}
+          {editing ? (
+            <div className="px-6 py-6 space-y-6">
+              {/* Banner */}
+              <div className="flex items-start gap-3 rounded-xl border border-warning/30 bg-warning/8 p-4">
+                <Pencil className="mt-0.5 size-4 text-warning shrink-0" />
+                <div>
+                  <p className="text-sm font-semibold text-warning">Manual field correction</p>
+                  <p className="mt-0.5 text-xs text-warning/80">
+                    Fill in missing or incorrect fields. On save the record will be marked as <strong>Verified (High confidence)</strong>.
+                  </p>
+                  {missingFields.length > 0 && (
+                    <p className="mt-2 text-xs text-warning/70">
+                      Missing: <span className="font-mono font-bold">{missingFields.join(", ")}</span>
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <section>
+                <h3 className="mb-4 text-xs font-semibold uppercase tracking-[0.16em] text-amber flex items-center gap-2">
+                  <Building2 className="size-3.5" /> Customer &amp; Order
+                </h3>
+                <div className="grid grid-cols-2 gap-4">
+                  {field("customer", "Customer")}
+                  {field("equipment", "Equipment")}
+                  {field("salesOrder", "Sales Order")}
+                  {field("purchaseOrder", "Purchase Order")}
+                  {field("jobOrProject", "Job / Project")}
+                  {field("location", "Location")}
+                </div>
+              </section>
+
+              <Separator className="bg-border" />
+
+              <section>
+                <h3 className="mb-4 text-xs font-semibold uppercase tracking-[0.16em] text-amber flex items-center gap-2">
+                  <Calendar className="size-3.5" /> Dates
+                </h3>
+                {field("certificateDate", "Certificate Date")}
+              </section>
+
+              <Separator className="bg-border" />
+
+              <section>
+                <h3 className="mb-4 text-xs font-semibold uppercase tracking-[0.16em] text-amber flex items-center gap-2">
+                  <Hash className="size-3.5" /> Serials
+                </h3>
+                <div className="space-y-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Serial / Lot Numbers</span>
+                    {rec.serials.length === 0 && (
+                      <span className="flex items-center gap-0.5 rounded bg-warning/15 px-1 py-px text-[9px] font-bold text-warning uppercase tracking-wide">
+                        <AlertTriangle className="size-2.5" /> missing
+                      </span>
+                    )}
+                  </div>
+                  <Input
+                    value={(draft.serials ?? []).join(", ")}
+                    onChange={(e) =>
+                      setDraft((p) => ({
+                        ...p,
+                        serials: e.target.value.split(",").map((s) => s.trim()).filter(Boolean),
+                      }))
+                    }
+                    className={`h-8 text-sm font-mono bg-background/60 border-border/60 focus:border-primary/50 ${rec.serials.length === 0 ? "border-warning/50" : ""}`}
+                    placeholder="e.g. SN-001, SN-002"
+                  />
+                  <p className="text-[10px] text-muted-foreground/60">Separate multiple serials with commas</p>
+                </div>
+              </section>
+
+              <Separator className="bg-border" />
+
+              <section>
+                <h3 className="mb-4 text-xs font-semibold uppercase tracking-[0.16em] text-amber flex items-center gap-2">
+                  <Wrench className="size-3.5" /> Notes
+                </h3>
+                {field("notes", "Notes", true)}
+              </section>
+
+              {saveMutation.isError && (
+                <p className="text-sm text-destructive font-medium">
+                  Save failed: {(saveMutation.error as Error).message}
+                </p>
+              )}
+
+              {/* Save / Cancel */}
+              <div className="sticky bottom-0 -mx-6 flex gap-2 border-t border-border bg-surface/95 px-6 py-4 backdrop-blur">
+                <Button
+                  onClick={handleSave}
+                  disabled={saveMutation.isPending}
+                  className="bg-primary text-primary-foreground hover:bg-primary/90 font-bold"
+                >
+                  {saveMutation.isPending ? (
+                    <><span className="mr-2 size-4 animate-spin rounded-full border-2 border-white/30 border-t-white inline-block" />Saving…</>
+                  ) : (
+                    <><Save className="mr-2 size-4" />Save &amp; Mark Verified</>
+                  )}
+                </Button>
+                <Button variant="ghost" onClick={cancelEditing} disabled={saveMutation.isPending}>
+                  <X className="mr-2 size-4" />Cancel
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="px-6 py-6 space-y-8">
+            {overdue && (
+              <div className="flex items-start gap-3 rounded-lg border border-destructive/40 bg-destructive/10 p-4">
+                <AlertTriangle className="mt-0.5 size-4 text-destructive" />
+                <div>
+                  <div className="text-sm font-semibold text-destructive">
+                    Recertification overdue by {Math.abs(rec.monthsToRecert ?? 0)} months
+                  </div>
+                  <div className="mt-1 text-xs text-destructive/80">
+                    Recommend immediate outreach. Equipment is past its 5-year recertification window.
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Customer & Order */}
+            <section>
+              <h3 className="mb-4 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-amber">
+                <Building2 className="size-3.5" /> Customer & Order
+              </h3>
+              <div className="grid grid-cols-2 gap-x-6 gap-y-5">
+                <Field label="Customer" value={rec.customer} />
+                <Field label="Job / Project" value={rec.jobOrProject} />
+                <Field label="Sales Order" value={rec.salesOrder} mono />
+                <Field label="Customer Purchase Order" value={rec.purchaseOrder} mono />
+              </div>
+            </section>
+
+            <Separator className="bg-border" />
+
+            {/* Lifecycle */}
+            <section>
+              <h3 className="mb-4 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-amber">
+                <Calendar className="size-3.5" /> Lifecycle
+              </h3>
+              <div className="grid grid-cols-2 gap-x-6 gap-y-5">
+                <Field label="Certificate Date" value={rec.certificateDate} mono />
+                <Field label="Tested Date" value={rec.testedDate} mono />
+                <Field label="Recertification Due" value={rec.recertificationDue} mono />
+                <Field
+                  label="Age (months)"
+                  value={rec.ageMonths !== null ? `${rec.ageMonths} mo` : null}
+                  mono
+                />
+              </div>
+            </section>
+
+            <Separator className="bg-border" />
+
+            {/* Parts & Serials */}
+            <section>
+              <h3 className="mb-4 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-amber">
+                <Package className="size-3.5" /> Parts & Serials
+              </h3>
+              <div className="space-y-4">
+                <div>
+                  <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                    Part Numbers ({rec.partNumbers.length})
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {rec.partNumbers.length === 0 && (
+                      <span className="text-sm text-muted-foreground">—</span>
+                    )}
+                    <TooltipProvider delayDuration={100}>
+                      {rec.partNumbers.map((p) => (
+                        <Tooltip key={p.number}>
+                          <TooltipTrigger asChild>
+                            <span className="cursor-default rounded border border-border bg-surface-elevated px-2 py-1 font-mono text-xs text-foreground">
+                              {p.qty != null && (
+                                <span className="mr-1.5 rounded bg-amber/20 px-1 text-[10px] font-semibold text-amber">{p.qty}×</span>
+                              )}
+                              {p.number}
+                            </span>
+                          </TooltipTrigger>
+                          {p.description && (
+                            <TooltipContent side="top" className="max-w-xs text-xs">
+                              {p.description}
+                            </TooltipContent>
+                          )}
+                        </Tooltip>
+                      ))}
+                    </TooltipProvider>
+                  </div>
+                </div>
+                <div>
+                  <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                    Serial / Lot ({rec.serials.length})
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {rec.serials.length === 0 && (
+                      <span className="text-sm text-muted-foreground">—</span>
+                    )}
+                    {rec.serials.map((s) => (
+                      <span
+                        key={s}
+                        className="rounded border border-accent/30 bg-accent/10 px-2 py-1 font-mono text-xs text-accent"
+                      >
+                        <Hash className="mr-1 inline size-3" />
+                        {s}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <Separator className="bg-border" />
+
+            {/* Recommendation */}
+            <section>
+              <h3 className="mb-4 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-amber">
+                <Wrench className="size-3.5" /> AI Recommendation
+                <span className="ml-auto rounded bg-surface-elevated px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                  conf · {rec.confidence}
+                </span>
+              </h3>
+              <p className="rounded-lg border border-border bg-surface-elevated p-4 text-sm leading-relaxed text-foreground">
+                {rec.recommendation}
+              </p>
+              {rec.invoiceBasis && (
+                <div className="mt-3 text-xs text-muted-foreground">
+                  <span className="font-semibold text-foreground/80">Invoice basis: </span>
+                  {rec.invoiceBasis}
+                </div>
+              )}
+              {rec.notes && (
+                <div className="mt-2 text-xs text-muted-foreground italic">{rec.notes}</div>
+              )}
+            </section>
+
+            {/* Updates: linked action comments + AI suggestions */}
+            {linkedAction && (
+              <>
+                <Separator className="bg-border" />
+                <section className="space-y-6">
+                  <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-amber">
+                    <MessageSquare className="size-3.5" /> Updates
+                    {/* Action status pill */}
+                    {(() => {
+                      const meta: Record<string, { label: string; cls: string }> = {
+                        in_progress: { label: "In Progress", cls: "text-orange-600 bg-orange-500/10 border-orange-500/25" },
+                        closed:      { label: "Closed",      cls: "text-emerald-600 bg-emerald-500/10 border-emerald-500/25" },
+                        failed:      { label: "Failed",      cls: "text-red-600 bg-red-500/10 border-red-500/25" },
+                      };
+                      const m = meta[linkedAction.status];
+                      return m ? (
+                        <span className={`ml-auto inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-[10px] font-bold ${m.cls}`}>
+                          <span className="size-1.5 rounded-full bg-current" />{m.label}
+                        </span>
+                      ) : null;
+                    })()}
+                  </h3>
+
+                  {/* Comments */}
+                  <div className="space-y-2">
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                      Comments ({linkedAction.comments.length})
+                    </div>
+                    {linkedAction.comments.length === 0 ? (
+                      <p className="text-xs text-muted-foreground/50 italic">No comments yet.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {linkedAction.comments.map((c) => (
+                          <div key={c.id} className="rounded-xl border border-border bg-surface-elevated px-4 py-3">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-[11px] font-bold text-foreground">{c.author}</span>
+                              <span className="text-[10px] text-muted-foreground/60 font-mono">
+                                {new Date(c.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                              </span>
+                            </div>
+                            <p className="text-sm text-foreground/85 leading-snug">{c.text}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* AI Suggestions */}
+                  <AiSuggestionsInline actionId={linkedAction.id} />
+                </section>
+              </>
+            )}
+
+            {/* Extracted text */}
+            {rec.textPreview && (
+              <>
+                <Separator className="bg-border" />
+                <section>
+                  <h3 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-amber">
+                    <FileText className="size-3.5" /> Extracted Text Preview
+                  </h3>
+                  <div className="max-h-64 overflow-y-auto rounded-lg border border-border bg-background/60 p-4 font-mono text-[11px] leading-relaxed text-muted-foreground">
+                    {rec.textPreview}
+                  </div>
+                </section>
+              </>
+            )}
+
+            {/* Actions */}
+            <div className="sticky bottom-0 -mx-6 flex flex-wrap gap-2 border-t border-border bg-surface/95 px-6 py-4 backdrop-blur">
+              <Button
+                className="bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed"
+                onClick={() => setEmailOpen(true)}
+                disabled={withinLifecycle}
+                title={withinLifecycle ? "No outreach needed — equipment is within its lifecycle" : undefined}
+              >
+                <Mail className="mr-2 size-4" />
+                Draft Customer Email
+              </Button>
+              <Button
+                variant="outline"
+                className="border-border disabled:opacity-40 disabled:cursor-not-allowed"
+                onClick={() => setQuoteOpen(true)}
+                disabled={withinLifecycle}
+                title={withinLifecycle ? "No quote needed — equipment is within its lifecycle" : undefined}
+              >
+                <ClipboardList className="mr-2 size-4" />
+                Generate Quote
+              </Button>
+              <Button
+                variant="outline"
+                className="border-amber-500/40 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20"
+                onClick={startEditing}
+              >
+                <Pencil className="mr-2 size-4" />
+                Edit Fields
+              </Button>
+              <Button variant="ghost" className="ml-auto text-muted-foreground">
+                Mark reviewed
+              </Button>
+            </div>
+            </div>
+          )}
+        </SheetContent>
+      </Sheet>
+
+      <EmailDraftDialog rec={rec} open={emailOpen} onOpenChange={setEmailOpen} />
+      <QuoteDraftDialog rec={rec} open={quoteOpen} onOpenChange={setQuoteOpen} />
+    </>
+  );
+}
