@@ -1,8 +1,7 @@
 {
   "version": 2,
   "installCommand": "cd Frontend && npm install",
-  "buildCommand": "cd Frontend && npm run build",
-  "outputDirectory": "Frontend/dist",
+  "buildCommand": "cd Frontend && npm run build -- --outDir ../public",
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/index.py" },
     { "source": "/(.*)", "destination": "/index.html" }
