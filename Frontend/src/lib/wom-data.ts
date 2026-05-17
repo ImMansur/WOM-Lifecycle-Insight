@@ -31,5 +31,6 @@ export type Recommendation = {
   confidence: "High" | "Low";
   notes: string | null;
   textPreview: string | null;
+  blobUrl: string | null;
 };
 

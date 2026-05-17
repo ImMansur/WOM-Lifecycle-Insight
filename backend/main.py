@@ -16,7 +16,7 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
 )
 
-from routers import ingest, recommendations, actions  # noqa: E402
+from routers import ingest, recommendations, actions, export  # noqa: E402
 
 
 @asynccontextmanager
@@ -48,6 +48,7 @@ app.add_middleware(
 app.include_router(recommendations.router)
 app.include_router(ingest.router)
 app.include_router(actions.router)
+app.include_router(export.router)
 
 
 @app.get("/")

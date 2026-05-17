@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { useQueryClient, useMutation } from "@tanstack/react-query";
+import { useQueryClient, useMutation, useQuery } from "@tanstack/react-query";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { StatusBadge, PriorityChip } from "./StatusBadge";
 import type { Recommendation } from "@/lib/wom-data";
-import { updateRecommendation, suggestNextSteps } from "@/lib/api";
+import { updateRecommendation, suggestNextSteps, fetchDocumentUrl } from "@/lib/api";
 import type { RecommendationPatch, Action } from "@/lib/api";
 import {
   FileText,
@@ -35,6 +35,8 @@ import {
   MessageSquare,
   Sparkles,
   Loader2,
+  ExternalLink,
+  FileSearch,
 } from "lucide-react";
 
 function buildPlainText(rec: Recommendation): string {
@@ -532,7 +534,15 @@ export function RecommendationDetail({
   const [quoteOpen, setQuoteOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<RecommendationPatch>({});
+  const [viewDoc, setViewDoc] = useState(false);
   const qc = useQueryClient();
+
+  const { data: docData, isFetching: docLoading, error: docError } = useQuery({
+    queryKey: ["docUrl", rec?.sourceFile],
+    queryFn: () => fetchDocumentUrl(rec!.sourceFile),
+    enabled: viewDoc && !!rec?.sourceFile,
+    staleTime: 23 * 60 * 60 * 1000, // refetch after 23 h, SAS valid for 24 h
+  });
 
   const saveMutation = useMutation({
     mutationFn: (patch: RecommendationPatch) => updateRecommendation(rec!.id, patch),
@@ -630,11 +640,60 @@ export function RecommendationDetail({
 
   return (
     <>
-      <Sheet open={open} onOpenChange={(v) => { if (!v) cancelEditing(); onOpenChange(v); }}>
+      <Sheet open={open} onOpenChange={(v) => { if (!v) { cancelEditing(); setViewDoc(false); } onOpenChange(v); }}>
         <SheetContent
           side="right"
-          className="w-full overflow-y-auto border-l border-border bg-surface p-0 sm:max-w-[640px]"
+          className={`border-l border-border bg-surface p-0 transition-all duration-300 ${viewDoc ? "w-full sm:max-w-[1200px] overflow-hidden flex flex-row" : "w-full sm:max-w-[640px] overflow-y-auto"}`}
         >
+          {/* ── DOCUMENT VIEWER PANEL (left side when active) ───────────── */}
+          {viewDoc && (
+            <div className="flex flex-col border-r border-border/50 bg-background/40" style={{ width: "55%", minWidth: 0 }}>
+              <div className="flex items-center justify-between border-b border-border/40 bg-surface/80 px-4 py-3 backdrop-blur">
+                <div className="flex items-center gap-2 min-w-0">
+                  <FileSearch className="size-4 text-primary/60 shrink-0" />
+                  <span className="truncate font-mono text-xs text-muted-foreground">{rec.sourceFile}</span>
+                </div>
+                {docData?.url && (
+                  <a href={docData.url} target="_blank" rel="noreferrer" className="ml-2 shrink-0 rounded-lg p-1.5 text-muted-foreground hover:bg-secondary/60 hover:text-foreground transition-colors" title="Open in new tab">
+                    <ExternalLink className="size-3.5" />
+                  </a>
+                )}
+              </div>
+              <div className="flex-1 relative">
+                {docLoading && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background/60">
+                    <Loader2 className="size-8 animate-spin text-primary/40" />
+                    <p className="text-xs text-muted-foreground">Loading document…</p>
+                  </div>
+                )}
+                {docError && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center">
+                    <AlertTriangle className="size-8 text-destructive/50" />
+                    <p className="text-sm font-medium text-destructive/70">Could not load document</p>
+                    <p className="text-xs text-muted-foreground">{(docError as Error).message}</p>
+                  </div>
+                )}
+                {docData?.url && !docLoading && (() => {
+                  const ext = rec.sourceFile.split(".").pop()?.toLowerCase() ?? "";
+                  const isDocx = ext === "docx" || ext === "doc";
+                  const src = isDocx
+                    ? `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(docData.url)}`
+                    : docData.url;
+                  return (
+                    <iframe
+                      key={docData.url}
+                      src={src}
+                      className="h-full w-full border-0"
+                      title={rec.sourceFile}
+                    />
+                  );
+                })()}
+              </div>
+            </div>
+          )}
+
+          {/* ── DETAIL PANEL (always visible) ───────────────────────────── */}
+          <div className={`flex flex-col ${viewDoc ? "flex-1 min-w-0 overflow-y-auto" : "w-full"}`}>
           <div className="sticky top-0 z-10 border-b border-border bg-surface/95 px-6 py-5 backdrop-blur">
             <SheetHeader className="space-y-3 text-left">
               <div className="flex items-center gap-2">
@@ -651,9 +710,18 @@ export function RecommendationDetail({
                     <CheckCircle2 className="size-3" /> Verified
                   </span>
                 )}
-                <span className="ml-auto font-mono text-xs text-muted-foreground">
-                  {rec.sourceType}
-                </span>
+                <button
+                  onClick={() => setViewDoc((v) => !v)}
+                  className={`ml-auto flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-all ${
+                    viewDoc
+                      ? "border-primary/40 bg-primary/10 text-primary"
+                      : "border-border/50 bg-secondary/50 text-muted-foreground hover:text-foreground"
+                  }`}
+                  title="Toggle original document view"
+                >
+                  <FileSearch className="size-3.5" />
+                  {viewDoc ? "Hide Doc" : "View Doc"}
+                </button>
               </div>
               <SheetTitle className="font-display text-xl leading-tight text-foreground">
                 {rec.equipment ?? rec.sourceFile}
@@ -1011,6 +1079,7 @@ export function RecommendationDetail({
             </div>
             </div>
           )}
+          </div>{/* end detail panel */}
         </SheetContent>
       </Sheet>
 

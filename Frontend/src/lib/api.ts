@@ -53,6 +53,19 @@ export async function deleteRecommendation(id: string): Promise<void> {
   }
 }
 
+export async function fetchDocumentUrl(filename: string): Promise<{ url: string; filename: string }> {
+  const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+  const needsSas = ext === "docx" || ext === "doc" || ext === "xlsx" || ext === "xls";
+  if (needsSas) {
+    // Office Online viewer requires a publicly accessible URL — use SAS
+    const res = await fetch(`${BASE}/api/documents/${encodeURIComponent(filename)}/url`);
+    if (!res.ok) throw new Error(`Could not get document URL: ${res.statusText}`);
+    return res.json();
+  }
+  // PDF and images: proxy through backend so Content-Disposition: inline is enforced
+  return { url: `${BASE}/api/documents/${encodeURIComponent(filename)}/view`, filename };
+}
+
 export interface RecommendationPatch {
   customer?: string;
   salesOrder?: string;
@@ -193,4 +206,28 @@ export async function suggestNextSteps(actionId: string): Promise<Action> {
     throw new Error(`Suggest failed (${res.status}): ${text}`);
   }
   return res.json();
+}
+
+// ─── Excel Export ─────────────────────────────────────────────────────────────
+
+export async function exportToExcel(recIds: string[]): Promise<void> {
+  const res = await fetch(`${BASE}/api/export/excel`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ rec_ids: recIds }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Export failed (${res.status}): ${text}`);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const today = new Date().toISOString().slice(0, 10);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `wom-records-${today}.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }

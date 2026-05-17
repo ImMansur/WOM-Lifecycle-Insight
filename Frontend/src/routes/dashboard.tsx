@@ -2,8 +2,9 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { Recommendation } from "@/lib/wom-data";
-import { fetchRecommendations, ingestFiles, deleteRecommendation, fetchActions } from "@/lib/api";
+import { fetchRecommendations, ingestFiles, deleteRecommendation, fetchActions, exportToExcel } from "@/lib/api";
 import type { Action } from "@/lib/api";
+import { cn } from "@/lib/utils";
 import { StatusBadge, PriorityChip } from "@/components/wom/StatusBadge";
 import { RecommendationDetail } from "@/components/wom/RecommendationDetail";
 import { Input } from "@/components/ui/input";
@@ -35,6 +36,9 @@ import {
   Zap,
   ChevronRight,
   ChevronDown,
+  ChevronUp,
+  ChevronsLeft,
+  ChevronsRight,
   Trash2,
   LogOut,
   User,
@@ -42,6 +46,7 @@ import {
   Bell,
   MessageSquare,
   MapPin,
+  FileDown,
 } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import {
@@ -288,6 +293,17 @@ function UserMenu() {
   );
 }
 
+// ─── Confidence score ────────────────────────────────────────────────────────
+
+function getConfidenceScore(r: { confidence: string; extractionStatus: string; customer: string | null; equipment: string | null; recertificationDue: string | null; salesOrder: string | null; purchaseOrder: string | null; certificateDate: string | null; location: string | null }): number {
+  const keyFields = [r.customer, r.equipment, r.recertificationDue, r.salesOrder ?? r.purchaseOrder, r.certificateDate, r.location];
+  const missingCount = keyFields.filter((f) => !f).length;
+  const base = r.confidence === "High" ? 90 : 65;
+  const ocrPenalty = r.extractionStatus !== "OK" ? 20 : 0;
+  const fieldPenalty = missingCount * 2;
+  return Math.max(5, Math.min(100, base - ocrPenalty - fieldPenalty));
+}
+
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
 function Dashboard() {
@@ -299,6 +315,9 @@ function Dashboard() {
   const [open, setOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [page, setPage] = useState(0);
+  const [sortKey, setSortKey] = useState<"priority" | "customer" | "recertDue" | "status" | null>(null);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
   // ── All filter state lives in the URL ─────────────────────────────────────
   const activeTab = search.tab;
@@ -411,7 +430,76 @@ function Dashboard() {
     });
   }, [filtered, query]);
 
-  // ── Dropdown options for FilterBar ────────────────────────────────────────
+  // ── Sort + paginate ───────────────────────────────────────────────────────
+  const PAGE_SIZE = 50;
+
+  const sortedRows = useMemo(() => {
+    if (!sortKey) return tableRows;
+    return [...tableRows].sort((a, b) => {
+      let av = "", bv = "";
+      if (sortKey === "priority") {
+        const order = { "High": 0, "Manual review": 1, "Low": 2 };
+        const ai = order[a.priority as keyof typeof order] ?? 9;
+        const bi = order[b.priority as keyof typeof order] ?? 9;
+        return sortDir === "asc" ? ai - bi : bi - ai;
+      }
+      if (sortKey === "customer") { av = a.customer ?? ""; bv = b.customer ?? ""; }
+      else if (sortKey === "recertDue") { av = a.recertificationDue ?? "9999-12-31"; bv = b.recertificationDue ?? "9999-12-31"; }
+      else if (sortKey === "status") { av = a.status; bv = b.status; }
+      return sortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
+    });
+  }, [tableRows, sortKey, sortDir]);
+
+  const totalPages = Math.max(1, Math.ceil(sortedRows.length / PAGE_SIZE));
+  const pagedRows = useMemo(() => sortedRows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE), [sortedRows, page]);
+
+  // Reset to page 0 whenever filters or search change
+  useEffect(() => { setPage(0); }, [query, recTimeFilter, recPriorityFilter, recClients.join(), recLocations.join(), recParts.join()]);
+
+  function toggleSort(key: typeof sortKey) {
+    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else { setSortKey(key); setSortDir("asc"); }
+  }
+
+  function SortIcon({ col }: { col: typeof sortKey }) {
+    if (sortKey !== col) return <ChevronDown className="size-3 opacity-20" />;
+    return sortDir === "asc"
+      ? <ChevronUp className="size-3 text-primary" />
+      : <ChevronDown className="size-3 text-primary" />;
+  }
+
+  function ExportButton({ ids }: { ids: string[] }) {
+    const [loading, setLoading] = useState(false);
+    async function handleExport() {
+      if (!ids.length) return;
+      setLoading(true);
+      try {
+        await exportToExcel(ids);
+      } catch (err) {
+        console.error("Export failed", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    return (
+      <Button
+        onClick={handleExport}
+        disabled={loading || !ids.length}
+        variant="outline"
+        size="sm"
+        className="h-11 gap-2 rounded-xl border-border/40 bg-secondary/30 px-4 text-sm font-semibold text-foreground hover:bg-secondary/60 transition-all"
+      >
+        {loading ? (
+          <Loader2 className="size-4 animate-spin" />
+        ) : (
+          <FileDown className="size-4" />
+        )}
+        Export Excel {ids.length > 0 && <span className="text-muted-foreground">({ids.length})</span>}
+      </Button>
+    );
+  }
+
+
   const recClientOptions = useMemo(
     () => [...new Set(recommendations.map((r) => r.customer).filter(Boolean) as string[])].sort((a, b) => a.localeCompare(b)),
     [recommendations]
@@ -632,11 +720,14 @@ function Dashboard() {
                   />
                 </div>
 
-                {/* Record count badge */}
-                <div className="ml-auto hidden rounded-xl border border-border/40 bg-secondary/20 px-4 py-2 font-display text-sm text-muted-foreground sm:flex items-center gap-2">
-                  <span className="font-bold text-foreground">{tableRows.length}</span>
-                  <span className="opacity-40">/</span>
-                  <span>{recommendations.length} records</span>
+                {/* Record count badge + Export */}
+                <div className="ml-auto flex items-center gap-3">
+                  <div className="hidden rounded-xl border border-border/40 bg-secondary/20 px-4 py-2 font-display text-sm text-muted-foreground sm:flex items-center gap-2">
+                    <span className="font-bold text-foreground">{tableRows.length}</span>
+                    <span className="opacity-40">/</span>
+                    <span>{recommendations.length} records</span>
+                  </div>
+                  <ExportButton ids={sortedRows.map((r) => r.id)} />
                 </div>
               </div>
 
@@ -645,12 +736,12 @@ function Dashboard() {
                 {/* Column headers */}
                 <div className="grid grid-cols-[8px_100px_1.5fr_1.4fr_1fr_1fr_130px_120px_48px] items-center gap-4 border-b border-border/30 bg-secondary/30 px-6 py-5 text-[11px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70">
                   <div />
-                  <div>Priority</div>
-                  <div>Customer</div>
+                  <button onClick={() => toggleSort("priority")} className="flex items-center gap-1 hover:text-foreground transition-colors">Priority <SortIcon col="priority" /></button>
+                  <button onClick={() => toggleSort("customer")} className="flex items-center gap-1 hover:text-foreground transition-colors">Customer <SortIcon col="customer" /></button>
                   <div>Equipment</div>
                   <div>SO / PO</div>
-                  <div>Recert. Due</div>
-                  <div>Status</div>
+                  <button onClick={() => toggleSort("recertDue")} className="flex items-center gap-1 hover:text-foreground transition-colors">Recert. Due <SortIcon col="recertDue" /></button>
+                  <button onClick={() => toggleSort("status")} className="flex items-center gap-1 hover:text-foreground transition-colors">Status <SortIcon col="status" /></button>
                   <div>Client Updates</div>
                   <div />
                 </div>
@@ -719,7 +810,7 @@ function Dashboard() {
 
                 {/* Rows */}
                 <div className="divide-y divide-border/25">
-                  {tableRows.map((r) => {
+                  {pagedRows.map((r) => {
                     const overdue = r.status === "Expired / overdue";
                     const dueSoon = r.monthsToRecert !== null && r.monthsToRecert >= 0 && r.monthsToRecert <= 3;
                     const ocr = r.extractionStatus !== "OK";
@@ -794,14 +885,20 @@ function Dashboard() {
                         {/* Status */}
                         <div className="flex flex-col gap-1">
                           <StatusBadge status={r.status} />
-                          <div className="flex items-center gap-1 font-mono text-[9px] text-muted-foreground/60">
-                            {ocr
-                              ? <><AlertTriangle className="size-3 text-warning" /> OCR</>
-                              : r.confidence === "Low"
-                                ? <><AlertTriangle className="size-3 text-warning" /> Low conf</>
-                                : <><CheckCircle2 className="size-3 text-emerald-500/70" /> {r.sourceType}</>
-                            }
-                          </div>
+                          {(() => {
+                            const score = getConfidenceScore(r);
+                            const color = score >= 80 ? "text-emerald-500" : score >= 60 ? "text-orange-400" : "text-red-400";
+                            const bar   = score >= 80 ? "bg-emerald-500"   : score >= 60 ? "bg-orange-400"   : "bg-red-400";
+                            const label = ocr ? " · OCR" : r.confidence === "Low" ? " · Low" : "";
+                            return (
+                              <div className="flex items-center gap-1.5 mt-0.5" title={`Confidence: ${score}%${ocr ? " (OCR document)" : ""}${r.confidence === "Low" ? " (low extraction confidence)" : ""}`}>
+                                <div className="h-1 w-10 rounded-full bg-border/40 overflow-hidden">
+                                  <div className={cn("h-full rounded-full", bar)} style={{ width: `${score}%` }} />
+                                </div>
+                                <span className={cn("font-mono text-[9px] font-bold", color)}>{score}%{label}</span>
+                              </div>
+                            );
+                          })()}
                         </div>
 
                         {/* Updates */}
@@ -848,24 +945,95 @@ function Dashboard() {
                 </div>
               </div>
 
-              {/* Footer */}
+              {/* Footer / Pagination */}
               {!isLoading && !isError && (
-                <div className="mt-12 flex flex-col items-center justify-between gap-4 border-t border-border/25 pt-8 text-xs text-muted-foreground sm:flex-row pb-12">
-                  <div className="flex flex-wrap items-center gap-5">
-                    <span>
-                      Showing <span className="font-bold text-foreground">{tableRows.length}</span> of{" "}
-                      <span className="font-bold text-foreground">{recommendations.length}</span> records
-                    </span>
-                    <span className="size-1 rounded-full bg-border/60" />
-                    <span>
-                      Rule: <span className="font-mono font-bold text-primary">60-month recertification</span>
-                    </span>
-                    <span className="size-1 rounded-full bg-border/60" />
-                    <span className="font-mono text-[10px] opacity-60">as of {summary.asOf}</span>
+                <div className="mt-8 flex flex-col gap-4 border-t border-border/25 pt-6 pb-12">
+                  {/* Record count + rule info */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
+                    <div className="flex flex-wrap items-center gap-4">
+                      <span>
+                        Showing{" "}
+                        <span className="font-bold text-foreground">{page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, sortedRows.length)}</span>
+                        {" "}of{" "}
+                        <span className="font-bold text-foreground">{sortedRows.length}</span>
+                        {sortedRows.length !== recommendations.length && (
+                          <span className="text-muted-foreground/50"> (filtered from {recommendations.length})</span>
+                        )}
+                      </span>
+                      <span className="size-1 rounded-full bg-border/60" />
+                      <span>Rule: <span className="font-mono font-bold text-primary">60-month recertification</span></span>
+                      <span className="size-1 rounded-full bg-border/60" />
+                      <span className="font-mono text-[10px] opacity-60">as of {summary.asOf}</span>
+                    </div>
+                    <div className="font-mono text-[10px] uppercase tracking-[0.2em] opacity-40">WOM Lifecycle · v1.0</div>
                   </div>
-                  <div className="font-mono text-[10px] uppercase tracking-[0.2em] opacity-40">
-                    WOM Lifecycle · v1.0
-                  </div>
+
+                  {/* Page controls */}
+                  {totalPages > 1 && (
+                    <div className="flex items-center justify-center gap-2">
+                      <button
+                        onClick={() => setPage(0)}
+                        disabled={page === 0}
+                        className="flex size-8 items-center justify-center rounded-lg border border-border/40 bg-secondary/40 text-muted-foreground transition-all hover:bg-secondary hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed"
+                        title="First page"
+                      >
+                        <ChevronsLeft className="size-3.5" />
+                      </button>
+                      <button
+                        onClick={() => setPage((p) => Math.max(0, p - 1))}
+                        disabled={page === 0}
+                        className="flex size-8 items-center justify-center rounded-lg border border-border/40 bg-secondary/40 text-muted-foreground transition-all hover:bg-secondary hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed"
+                        title="Previous page"
+                      >
+                        <ChevronDown className="size-3.5 rotate-90" />
+                      </button>
+
+                      {/* Page number pills */}
+                      <div className="flex items-center gap-1">
+                        {Array.from({ length: totalPages }, (_, i) => i)
+                          .filter((i) => i === 0 || i === totalPages - 1 || Math.abs(i - page) <= 2)
+                          .reduce<(number | "…")[]>((acc, i, idx, arr) => {
+                            if (idx > 0 && (i as number) - (arr[idx - 1] as number) > 1) acc.push("…");
+                            acc.push(i);
+                            return acc;
+                          }, [])
+                          .map((item, idx) =>
+                            item === "…" ? (
+                              <span key={`ellipsis-${idx}`} className="px-1 text-xs text-muted-foreground/40">…</span>
+                            ) : (
+                              <button
+                                key={item}
+                                onClick={() => setPage(item as number)}
+                                className={`flex size-8 items-center justify-center rounded-lg text-xs font-bold transition-all ${
+                                  page === item
+                                    ? "bg-primary text-white shadow-md shadow-primary/20"
+                                    : "border border-border/40 bg-secondary/40 text-muted-foreground hover:bg-secondary hover:text-foreground"
+                                }`}
+                              >
+                                {(item as number) + 1}
+                              </button>
+                            )
+                          )}
+                      </div>
+
+                      <button
+                        onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                        disabled={page === totalPages - 1}
+                        className="flex size-8 items-center justify-center rounded-lg border border-border/40 bg-secondary/40 text-muted-foreground transition-all hover:bg-secondary hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed"
+                        title="Next page"
+                      >
+                        <ChevronDown className="size-3.5 -rotate-90" />
+                      </button>
+                      <button
+                        onClick={() => setPage(totalPages - 1)}
+                        disabled={page === totalPages - 1}
+                        className="flex size-8 items-center justify-center rounded-lg border border-border/40 bg-secondary/40 text-muted-foreground transition-all hover:bg-secondary hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed"
+                        title="Last page"
+                      >
+                        <ChevronsRight className="size-3.5" />
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -885,7 +1053,7 @@ function Dashboard() {
               <Trash2 className="size-4" /> Delete record?
             </DialogTitle>
             <DialogDescription>
-              This will permanently remove this recommendation from the database. This action cannot be undone.
+              This will permanently remove this recommendation <strong>and any linked action</strong> from the database. This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <div className="mt-4 flex justify-end gap-3">

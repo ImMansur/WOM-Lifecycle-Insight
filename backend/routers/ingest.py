@@ -10,6 +10,7 @@ from fastapi import APIRouter, File, HTTPException, UploadFile, status
 from models import IngestResponse, Recommendation
 from services.document_intelligence import extract_text, extract_text_from_docx
 from services.openai_service import process_document
+from services.blob_storage import upload_file
 from store import recommendation_store
 
 logger = logging.getLogger(__name__)
@@ -52,6 +53,9 @@ async def ingest_files(files: List[UploadFile] = File(...)):
             errors.append(f"{filename}: empty file.")
             continue
 
+        # Upload original file to Azure Blob Storage and capture the URL
+        blob_url = upload_file(file_bytes, filename)
+
         source_type = ext.lstrip(".").upper()  # "PDF", "DOC", "DOCX"
 
         try:
@@ -79,6 +83,7 @@ async def ingest_files(files: List[UploadFile] = File(...)):
                 source_type=source_type,
             )
             recommendation.convertedDocx = converted_docx_name
+            recommendation.blobUrl = blob_url
             results.append(recommendation)
             recommendation_store.add(recommendation)
 

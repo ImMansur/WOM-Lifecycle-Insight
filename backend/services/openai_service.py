@@ -32,7 +32,7 @@ Extract the following fields (use null when not found):
 - serials: array of ALL serial numbers, lot numbers, heat numbers, assembly serials, and reference standards (e.g. MR-01-75) found anywhere in the document
 - certificateDate: ISO date (YYYY-MM-DD) from "Certificate Date" or "Date" field
 - testedDate: ISO date (YYYY-MM-DD) from "Test Date" or "Tested Date" field, else null
-- textPreview: first ~300 characters of meaningful document text (a concise excerpt)
+- textPreview: first ~2000 characters of meaningful document text (a concise excerpt, preserving as much structure as possible)
 - confidence: "High" if you extracted customer + salesOrder + certificateDate, else "Low"
 - notes: any caveats, document format issues, or special observations (string or null)
 

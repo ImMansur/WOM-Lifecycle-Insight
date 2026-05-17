@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -61,13 +61,158 @@ import {
   Hash,
   FileText,
   TicketIcon,
+  Search,
+  Eye,
+  EyeOff,
+  ShieldAlert,
 } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import { NotificationBell } from "@/components/wom/NotificationBell";
+import { MetricCard } from "@/components/wom/HomeTab";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  Cell,
+} from "recharts";
 
 export const Route = createFileRoute("/action-center")({
   component: ActionCenter,
 });
+
+// ─── Mock monthly trend data ─────────────────────────────────────────────────
+const MONTHLY_TREND = [
+  { month: "Dec", failed: 4, closed: 9, in_progress: 6 },
+  { month: "Jan", failed: 6, closed: 14, in_progress: 8 },
+  { month: "Feb", failed: 3, closed: 11, in_progress: 10 },
+  { month: "Mar", failed: 7, closed: 16, in_progress: 7 },
+  { month: "Apr", failed: 5, closed: 12, in_progress: 9 },
+  { month: "May", failed: 8, closed: 18, in_progress: 11 },
+];
+
+function TrendTooltip({ active, payload, label }: { active?: boolean; payload?: any[]; label?: string }) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="rounded-xl border border-border/60 bg-surface shadow-xl shadow-black/10 p-3.5 min-w-[148px]">
+      <p className="text-xs font-bold text-foreground mb-2.5 border-b border-border/40 pb-2">{label}</p>
+      {payload.map((entry: any) => (
+        <div key={entry.dataKey} className="flex items-center justify-between gap-6 text-xs py-0.5">
+          <span className="flex items-center gap-1.5 text-muted-foreground">
+            <span className="size-2 rounded-full shrink-0" style={{ background: entry.fill }} />
+            {entry.name}
+          </span>
+          <span className="font-bold text-foreground tabular-nums">{entry.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function MonthlyTrendChart({ actions }: { actions: Action[] }) {
+  const [range, setRange] = useState<1 | 3 | 6>(1);
+
+  // Replace May entry with real data derived from actual actions
+  const mayReal = useMemo(() => {
+    const may = actions.filter((a) => (a.createdAt ?? "").startsWith("2026-05"));
+    return {
+      month: "May",
+      failed:      may.filter((a) => a.status === "failed").length,
+      closed:      may.filter((a) => a.status === "closed").length,
+      in_progress: may.filter((a) => a.status === "in_progress").length,
+    };
+  }, [actions]);
+
+  const trendData = useMemo(
+    () => [...MONTHLY_TREND.slice(0, -1), mayReal],
+    [mayReal],
+  );
+
+  const data = trendData.slice(-range);
+
+  const totals = data.reduce(
+    (acc, m) => ({ failed: acc.failed + m.failed, closed: acc.closed + m.closed, in_progress: acc.in_progress + m.in_progress }),
+    { failed: 0, closed: 0, in_progress: 0 },
+  );
+
+  return (
+    <div className="rounded-2xl border border-border/50 bg-surface/60 p-5 shadow-sm">
+      {/* Header */}
+      <div className="flex items-start justify-between mb-5">
+        <div>
+          <h3 className="text-sm font-bold text-foreground">Monthly Action Trend</h3>
+          <p className="text-xs text-muted-foreground mt-0.5">Action outcomes over the selected period</p>
+        </div>
+        <div className="flex items-center gap-1 rounded-xl bg-secondary/50 p-1">
+          {([1, 3, 6] as const).map((r) => (
+            <button
+              key={r}
+              onClick={() => setRange(r)}
+              className={cn(
+                "rounded-lg px-3 py-1 text-[11px] font-bold transition-all",
+                range === r
+                  ? "bg-primary text-white shadow-sm"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {r}M
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Summary strip */}
+      <div className="grid grid-cols-3 gap-2.5 mb-5">
+        {([
+          { label: "Total Failed",      value: totals.failed,      color: "text-red-400",     bg: "bg-red-500/8",     border: "border-red-500/20"     },
+          { label: "Total Closed",      value: totals.closed,      color: "text-emerald-400", bg: "bg-emerald-500/8", border: "border-emerald-500/20" },
+          { label: "Total In-Progress", value: totals.in_progress, color: "text-orange-400",  bg: "bg-orange-400/8",  border: "border-orange-400/20"  },
+        ] as const).map(({ label, value, color, bg, border }) => (
+          <div key={label} className={cn("rounded-xl border p-3 text-center", bg, border)}>
+            <p className={cn("text-2xl font-bold tabular-nums leading-none", color)}>{value}</p>
+            <p className="text-[10px] text-muted-foreground mt-1.5 font-medium leading-tight">{label}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Chart */}
+      <ResponsiveContainer width="100%" height={220}>
+        <BarChart data={data} barCategoryGap="32%" margin={{ top: 4, right: 4, left: -22, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="rgba(128,128,128,0.08)" vertical={false} />
+          <XAxis
+            dataKey="month"
+            tick={{ fontSize: 11, fill: "var(--color-muted-foreground)", fontWeight: 500 }}
+            axisLine={false}
+            tickLine={false}
+          />
+          <YAxis
+            allowDecimals={false}
+            tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }}
+            axisLine={false}
+            tickLine={false}
+            width={30}
+          />
+          <Tooltip content={<TrendTooltip />} cursor={{ fill: "rgba(128,128,128,0.06)", radius: 4 }} />
+          <Legend
+            wrapperStyle={{ fontSize: 11, paddingTop: 16 }}
+            iconType="circle"
+            iconSize={7}
+            formatter={(value) => (
+              <span style={{ color: "var(--color-muted-foreground)", fontWeight: 500 }}>{value}</span>
+            )}
+          />
+          <Bar dataKey="failed" name="Failed" fill="#ef4444" radius={[4, 4, 0, 0]} maxBarSize={16} />
+          <Bar dataKey="closed" name="Closed" fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={16} />
+          <Bar dataKey="in_progress" name="In Progress" fill="#f97316" radius={[4, 4, 0, 0]} maxBarSize={16} />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
 
 // â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -769,10 +914,16 @@ function TicketCard({
 }) {
   const isOverdue = rec.status === "Expired / overdue";
   const commentCount = linkedAction?.comments.length ?? 0;
+  const actionStatus = linkedAction?.status;
+  const tint =
+    actionStatus === "closed"      ? "border-emerald-500/40 bg-emerald-500/5 hover:border-emerald-500/60 hover:shadow-emerald-500/5"
+    : actionStatus === "failed"    ? "border-red-500/40 bg-red-500/5 hover:border-red-500/60 hover:shadow-red-500/5"
+    : actionStatus === "in_progress" ? "border-orange-400/40 bg-orange-400/5 hover:border-orange-400/60 hover:shadow-orange-400/5"
+    : "border-border/60 bg-surface hover:border-primary/30 hover:shadow-primary/5";
   return (
     <button
       type="button" onClick={onClick}
-      className="group relative flex flex-col gap-3 rounded-2xl border border-border/60 bg-surface p-5 text-left transition-all hover:border-primary/30 hover:shadow-lg hover:shadow-primary/5 focus:outline-none focus:ring-2 focus:ring-primary/30"
+      className={cn("group relative flex flex-col gap-3 rounded-2xl border p-5 text-left transition-all hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-primary/30", tint)}
     >
       <div className={cn("absolute left-0 top-0 h-full w-1 rounded-l-2xl", isOverdue ? "bg-red-500" : "bg-orange-500")} />
       <div className="flex items-start justify-between gap-2 pl-3">
@@ -822,6 +973,10 @@ type ActionStatusFilter = "all" | ActionStatus;
 function ActionCenter() {
   const [selectedRec, setSelectedRec] = useState<Recommendation | null>(null);
   const [ticketOpen, setTicketOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedClients, setSelectedClients] = useState<string[]>([]);
+  const [hideResolved, setHideResolved] = useState(true);
+  const [hideFailed, setHideFailed] = useState(true);
 
   const { data: recsData } = useQuery({
     queryKey: ["recommendations"],
@@ -837,12 +992,7 @@ function ActionCenter() {
   const recs = recsData?.recommendations ?? [];
   const overdueRecs = recs.filter((r) => r.status === "Expired / overdue");
   const dueSoonRecs = recs.filter((r) => r.status === "Due soon");
-
-  const manualActions = actions.filter((a) => !a.linkedRecId);
-  const actionCounts = {
-    in_progress: manualActions.filter((a) => a.status === "in_progress").length,
-    closed: manualActions.filter((a) => a.status === "closed").length,
-  };
+  const attentionRecs = [...overdueRecs, ...dueSoonRecs];
 
   function getLinkedAction(rec: Recommendation) {
     return actions.find((a) => a.linkedRecId === rec.id);
@@ -851,6 +1001,59 @@ function ActionCenter() {
   function openTicket(rec: Recommendation) { setSelectedRec(rec); setTicketOpen(true); }
 
   const liveLinkedAction = selectedRec ? getLinkedAction(selectedRec) : undefined;
+
+  // KPI metrics
+  const customersAffected = useMemo(() => new Set(attentionRecs.map((r) => r.customer).filter(Boolean)).size, [attentionRecs]);
+  const highPriorityCount = attentionRecs.filter((r) => r.priority === "High").length;
+  const allInProgress = actions.filter((a) => a.status === "in_progress").length;
+  const allClosed = actions.filter((a) => a.status === "closed").length;
+
+  // Client options for filter dropdown
+  const clientOptions = useMemo(
+    () => [...new Set(attentionRecs.map((r) => r.customer).filter(Boolean) as string[])].sort(),
+    [attentionRecs],
+  );
+
+  // Filtered ticket lists
+  const filteredOverdue = useMemo(() =>
+    overdueRecs.filter((rec) => {
+      if (hideResolved && actions.find((a) => a.linkedRecId === rec.id)?.status === "closed") return false;
+      if (hideFailed && actions.find((a) => a.linkedRecId === rec.id)?.status === "failed") return false;
+      if (selectedClients.length > 0 && !selectedClients.includes(rec.customer ?? "")) return false;
+      if (searchQuery) {
+        const q = searchQuery.toLowerCase();
+        const hay = [rec.customer, rec.equipment, rec.salesOrder, rec.purchaseOrder, ...rec.serials].filter(Boolean).join(" ").toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    }),
+    [overdueRecs, hideResolved, hideFailed, selectedClients, searchQuery, actions],
+  );
+
+  const filteredDueSoon = useMemo(() =>
+    dueSoonRecs.filter((rec) => {
+      if (hideResolved && actions.find((a) => a.linkedRecId === rec.id)?.status === "closed") return false;
+      if (hideFailed && actions.find((a) => a.linkedRecId === rec.id)?.status === "failed") return false;
+      if (selectedClients.length > 0 && !selectedClients.includes(rec.customer ?? "")) return false;
+      if (searchQuery) {
+        const q = searchQuery.toLowerCase();
+        const hay = [rec.customer, rec.equipment, rec.salesOrder, rec.purchaseOrder, ...rec.serials].filter(Boolean).join(" ").toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    }),
+    [dueSoonRecs, hideResolved, hideFailed, selectedClients, searchQuery, actions],
+  );
+
+  const resolvedHiddenCount = useMemo(
+    () => attentionRecs.filter((r) => actions.find((a) => a.linkedRecId === r.id)?.status === "closed").length,
+    [attentionRecs, actions],
+  );
+
+  const failedHiddenCount = useMemo(
+    () => attentionRecs.filter((r) => actions.find((a) => a.linkedRecId === r.id)?.status === "failed").length,
+    [attentionRecs, actions],
+  );
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -894,53 +1097,99 @@ function ActionCenter() {
         </div>
         <div className="relative mx-auto max-w-[1600px] px-6 flex flex-col gap-4">
           <div className="inline-flex items-center gap-2 rounded-full border border-primary/25 bg-primary/8 px-4 py-1.5 w-fit font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-primary shadow-sm shadow-primary/10">
-            <Zap className="size-3" /> Work Orders · Action Tracker
+            <Zap className="size-3" /> Overdue &amp; Upcoming Recertifications
           </div>
           <h1 className="font-display text-5xl font-black leading-tight tracking-tight text-accent md:text-6xl">
-            Action <span className="bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent italic">Center</span>
+            Needs <span className="bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent italic">Attention</span>
           </h1>
           <p className="max-w-xl text-base leading-relaxed text-muted-foreground/80">
-            All overdue and upcoming recertification tickets in one place. Add comments, track progress, and close out work orders.
+            Overdue and upcoming recertification tickets. Search, filter by priority or customer — resolved tickets are hidden by default.
           </p>
         </div>
       </section>
 
-      {/* Metric cards */}
+      {/* KPI Metrics */}
       <div className="mx-auto max-w-[1600px] px-6 mb-8">
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          {[
-            { label: "Overdue", count: overdueRecs.length, color: "text-red-400", bg: "bg-red-500/8", border: "border-red-500/20", icon: <AlertTriangle className="size-5 text-red-400" /> },
-            { label: "Due Soon", count: dueSoonRecs.length, color: "text-orange-400", bg: "bg-orange-500/8", border: "border-orange-400/20", icon: <CalendarClock className="size-5 text-orange-400" /> },
-            { label: "Open Actions", count: actionCounts.in_progress, color: "text-foreground", bg: "bg-muted/40", border: "border-border/60", icon: <LayoutGrid className="size-5 text-muted-foreground" /> },
-            { label: "Closed Actions", count: actionCounts.closed, color: "text-emerald-400", bg: "bg-emerald-500/8", border: "border-emerald-500/20", icon: <CheckCircle2 className="size-5 text-emerald-400" /> },].map((m) => (
-              <div key={m.label} className={cn("rounded-2xl border p-5", m.bg, m.border)}>
-                <div className="flex items-start justify-between">
-                  <div>
-                    <div className={cn("text-3xl font-black tracking-tight", m.color)}>{m.count}</div>
-                    <div className="mt-1 text-xs font-semibold uppercase tracking-[0.15em] text-muted-foreground">{m.label}</div>
-                  </div>
-                  {m.icon}
-                </div>
-              </div>
-            ))}
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-6">
+          <MetricCard icon={<AlertTriangle className="size-5" />} label="Overdue" value={overdueRecs.length} sub="Require immediate action" tone="danger" />
+          <MetricCard icon={<CalendarClock className="size-5" />} label="Due Soon" value={dueSoonRecs.length} sub="Upcoming recertifications" tone="warning" />
+          <MetricCard icon={<Clock3 className="size-5" />} label="Open Actions" value={allInProgress} sub="Work orders in progress" tone="primary" />
+          <MetricCard icon={<CheckCircle2 className="size-5" />} label="Resolved" value={allClosed} sub="Actions closed out" tone="success" />
+          <MetricCard icon={<Building2 className="size-5" />} label="Customers" value={customersAffected} sub="Requiring attention" tone="navy" />
+          <MetricCard icon={<ShieldAlert className="size-5" />} label="High Priority" value={highPriorityCount} sub="Across all tickets" tone="danger" />
         </div>
       </div>
 
-      {/* Tickets */}
+      {/* Charts */}
+      <div className="mx-auto max-w-[1600px] px-6 mb-8">
+        <MonthlyTrendChart actions={actions} />
+      </div>
+
+      {/* Filter bar + Tickets */}
       <div className="mx-auto max-w-[1600px] px-6 pb-20">
+        {/* Search & Filters */}
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:flex-wrap">
+          <div className="relative flex-1 min-w-[200px]">
+            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground/50" />
+            <input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search by customer, equipment, order…"
+              className="h-10 w-full rounded-xl border border-border/50 bg-secondary/40 pl-9 pr-4 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/40 focus:bg-secondary/60 transition-all"
+            />
+          </div>
+
+          {clientOptions.length > 0 && (
+            <select
+              value={selectedClients[0] ?? ""}
+              onChange={(e) => setSelectedClients(e.target.value ? [e.target.value] : [])}
+              className="h-10 rounded-xl border border-border/50 bg-secondary/40 px-3 text-sm text-muted-foreground focus:outline-none focus:border-primary/40 transition-all"
+            >
+              <option value="">All customers</option>
+              {clientOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          )}
+          <button
+            onClick={() => setHideResolved((v) => !v)}
+            className={cn(
+              "flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold border transition-all",
+              hideResolved
+                ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
+                : "border-border/50 bg-secondary/40 text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {hideResolved ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+            {hideResolved ? `Hide resolved (${resolvedHiddenCount})` : "Show resolved"}
+          </button>
+          <button
+            onClick={() => setHideFailed((v) => !v)}
+            className={cn(
+              "flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold border transition-all",
+              hideFailed
+                ? "border-red-500/40 bg-red-500/10 text-red-400"
+                : "border-border/50 bg-secondary/40 text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {hideFailed ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+            {hideFailed ? `Hide failed (${failedHiddenCount})` : "Show failed"}
+          </button>
+        </div>
+
         <div className="space-y-10">
           <div>
             <div className="mb-4 flex items-center gap-3">
               <AlertTriangle className="size-4 text-red-400" />
               <h2 className="text-sm font-black uppercase tracking-[0.18em] text-red-400">
-                Overdue — {overdueRecs.length} ticket{overdueRecs.length !== 1 ? "s" : ""}
+                Overdue — {filteredOverdue.length} ticket{filteredOverdue.length !== 1 ? "s" : ""}
               </h2>
             </div>
-            {overdueRecs.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-red-500/20 py-8 text-center text-sm text-muted-foreground/50">No overdue tickets. Great job!</div>
+            {filteredOverdue.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-red-500/20 py-8 text-center text-sm text-muted-foreground/50">
+                {overdueRecs.length === 0 ? "No overdue tickets. Great job!" : "No tickets match the current filters."}
+              </div>
             ) : (
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                {overdueRecs.map((rec) => (
+                {filteredOverdue.map((rec) => (
                   <TicketCard key={rec.id} rec={rec} linkedAction={getLinkedAction(rec)} onClick={() => openTicket(rec)} />
                 ))}
               </div>
@@ -951,14 +1200,16 @@ function ActionCenter() {
             <div className="mb-4 flex items-center gap-3">
               <CalendarClock className="size-4 text-orange-400" />
               <h2 className="text-sm font-black uppercase tracking-[0.18em] text-orange-400">
-                Due Soon — {dueSoonRecs.length} ticket{dueSoonRecs.length !== 1 ? "s" : ""}
+                Due Soon — {filteredDueSoon.length} ticket{filteredDueSoon.length !== 1 ? "s" : ""}
               </h2>
             </div>
-            {dueSoonRecs.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-orange-400/20 py-8 text-center text-sm text-muted-foreground/50">No upcoming tickets.</div>
+            {filteredDueSoon.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-orange-400/20 py-8 text-center text-sm text-muted-foreground/50">
+                {dueSoonRecs.length === 0 ? "No upcoming tickets." : "No tickets match the current filters."}
+              </div>
             ) : (
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                {dueSoonRecs.map((rec) => (
+                {filteredDueSoon.map((rec) => (
                   <TicketCard key={rec.id} rec={rec} linkedAction={getLinkedAction(rec)} onClick={() => openTicket(rec)} />
                 ))}
               </div>

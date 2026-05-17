@@ -727,6 +727,12 @@ export function ChartsSection({ filtered }: { filtered: Recommendation[] }) {
     return Object.entries(counts).map(([name, value]) => ({ name, value }));
   }, [filtered]);
 
+  const confidenceData = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const r of filtered) counts[r.confidence] = (counts[r.confidence] ?? 0) + 1;
+    return Object.entries(counts).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
+  }, [filtered]);
+
   const timelineData = useMemo(() => {
     const buckets = [
       { label: "Overdue", min: -Infinity as number, max: -1 as number },
@@ -832,23 +838,23 @@ export function ChartsSection({ filtered }: { filtered: Recommendation[] }) {
           )}
         </ChartCard>
 
-        <ChartCard title="Document Source Types" subtitle="Format distribution of ingested files">
-          {sourceData.length === 0 ? (
+        <ChartCard title="Extraction Confidence" subtitle="AI confidence level across filtered records">
+          {confidenceData.length === 0 ? (
             <div className="flex h-[220px] items-center justify-center text-sm text-muted-foreground">No data</div>
           ) : (
             <>
               <ResponsiveContainer width="100%" height={220}>
                 <PieChart>
-                  <Pie data={sourceData} cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={3} dataKey="value" labelLine={false} label={renderCustomPieLabel}>
-                    {sourceData.map((e) => <Cell key={e.name} fill={SOURCE_COLORS[e.name] ?? PALETTE.grey} />)}
+                  <Pie data={confidenceData} cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={3} dataKey="value" labelLine={false} label={renderCustomPieLabel}>
+                    {confidenceData.map((e) => <Cell key={e.name} fill={CONFIDENCE_COLORS[e.name] ?? PALETTE.grey} />)}
                   </Pie>
-                  <Tooltip content={<PieTooltip total={sourceData.reduce((s, d) => s + d.value, 0)} />} />
+                  <Tooltip content={<PieTooltip total={confidenceData.reduce((s, d) => s + d.value, 0)} />} />
                 </PieChart>
               </ResponsiveContainer>
               <div className="mt-2 flex flex-wrap justify-center gap-3">
-                {sourceData.map((d) => (
+                {confidenceData.map((d) => (
                   <div key={d.name} className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                    <span className="size-2.5 rounded-full" style={{ backgroundColor: SOURCE_COLORS[d.name] ?? PALETTE.grey }} />
+                    <span className="size-2.5 rounded-full" style={{ backgroundColor: CONFIDENCE_COLORS[d.name] ?? PALETTE.grey }} />
                     {d.name}: <span className="font-bold text-foreground">{d.value}</span>
                   </div>
                 ))}
@@ -1376,9 +1382,9 @@ export function HomeTab({
               )}
             </ChartCard>
 
-            {/* Source Type Donut */}
-            <ChartCard title="Document Source Types" subtitle="Format distribution of ingested files">
-              {sourceData.length === 0 ? (
+            {/* Confidence Donut */}
+            <ChartCard title="Extraction Confidence" subtitle="AI confidence level across filtered records">
+              {confidenceData.length === 0 ? (
                 <div className="flex h-[220px] items-center justify-center text-sm text-muted-foreground">
                   No data
                 </div>
@@ -1387,7 +1393,7 @@ export function HomeTab({
                   <ResponsiveContainer width="100%" height={220}>
                     <PieChart>
                       <Pie
-                        data={sourceData}
+                        data={confidenceData}
                         cx="50%"
                         cy="50%"
                         innerRadius={55}
@@ -1397,22 +1403,22 @@ export function HomeTab({
                         labelLine={false}
                         label={renderCustomPieLabel}
                       >
-                        {sourceData.map((entry) => (
+                        {confidenceData.map((entry) => (
                           <Cell
                             key={entry.name}
-                            fill={SOURCE_COLORS[entry.name] ?? PALETTE.grey}
+                            fill={CONFIDENCE_COLORS[entry.name] ?? PALETTE.grey}
                           />
                         ))}
                       </Pie>
-                      <Tooltip content={<PieTooltip total={sourceData.reduce((s, d) => s + d.value, 0)} />} />
+                      <Tooltip content={<PieTooltip total={confidenceData.reduce((s, d) => s + d.value, 0)} />} />
                     </PieChart>
                   </ResponsiveContainer>
                   <div className="mt-2 flex flex-wrap justify-center gap-3">
-                    {sourceData.map((d) => (
+                    {confidenceData.map((d) => (
                       <div key={d.name} className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
                         <span
                           className="size-2.5 rounded-full"
-                          style={{ backgroundColor: SOURCE_COLORS[d.name] ?? PALETTE.grey }}
+                          style={{ backgroundColor: CONFIDENCE_COLORS[d.name] ?? PALETTE.grey }}
                         />
                         {d.name}: <span className="font-bold text-foreground">{d.value}</span>
                       </div>
@@ -1421,6 +1427,7 @@ export function HomeTab({
                 </>
               )}
             </ChartCard>
+
           </div>
 
           {/* ── Charts Row 2 ────────────────────────────────────────────── */}

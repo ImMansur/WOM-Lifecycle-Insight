@@ -38,6 +38,7 @@ class Recommendation(BaseModel):
     confidence: Literal["High", "Low"]
     notes: Optional[str] = None
     textPreview: Optional[str] = None
+    blobUrl: Optional[str] = None
 
 
 class Summary(BaseModel):
