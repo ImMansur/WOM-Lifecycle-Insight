@@ -29,7 +29,9 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  // If Firebase already has a cached user in localStorage, start loading.
+  // If no cached user, show login immediately without waiting for Firebase.
+  const [loading, setLoading] = useState(auth.currentUser !== null);
 
   useEffect(() => {
     // Safety timeout: if Firebase doesn't respond in 6s, unblock the UI anyway
