@@ -1,11 +1,13 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { LoadingScreen } from "@/components/wom/LoadingScreen";
 import { Lock, Mail, ChevronRight, Globe, ShieldCheck, User, Briefcase, Loader2 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
+import { fetchRecommendations, fetchActions } from "@/lib/api";
 
 export const Route = createFileRoute("/login")({
   component: LoginPage,
@@ -23,6 +25,7 @@ function LoginPage() {
   const [jobTitle, setJobTitle] = useState("");
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { signIn, signUp, user, loading } = useAuth();
 
   useEffect(() => {
@@ -48,7 +51,9 @@ function LoginPage() {
         await signUp(email, password, displayName.trim(), jobTitle.trim());
       }
       // Credentials confirmed — now switch to full-screen loading.
-      // Keep it showing until navigation unmounts this component.
+      // Kick off data prefetch in parallel so it's cached when the dashboard mounts.
+      queryClient.prefetchQuery({ queryKey: ["recommendations"], queryFn: fetchRecommendations });
+      queryClient.prefetchQuery({ queryKey: ["actions"], queryFn: fetchActions });
       setIsLoading(true);
       if (mode === "register") navigate({ to: "/dashboard" });
     } catch (err: unknown) {
