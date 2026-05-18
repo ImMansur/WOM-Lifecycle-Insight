@@ -325,9 +325,9 @@ function Dashboard() {
   const query = search.q;
   const recTimeFilter = search.time as TimeFilter;
   const recPriorityFilter = search.priority as PriorityFilter;
-  const recClients = search.clients ? search.clients.split(",") : [] as string[];
-  const recLocations = search.locations ? search.locations.split(",") : [] as string[];
-  const recParts = search.parts ? search.parts.split(",") : [] as string[];
+  const recClients = search.clients ? search.clients.split("|") : [] as string[];
+  const recLocations = search.locations ? search.locations.split("|") : [] as string[];
+  const recParts = search.parts ? search.parts.split("|") : [] as string[];
 
   const setSearch = (patch: Partial<typeof search>) =>
     navigate({ to: "/dashboard", search: (prev) => ({ ...prev, ...patch }), replace: true, resetScroll: false });
@@ -337,9 +337,9 @@ function Dashboard() {
   const setQuery = (v: string) => setSearch({ q: v });
   const setRecTimeFilter = (v: TimeFilter) => setSearch({ time: v });
   const setRecPriorityFilter = (v: PriorityFilter) => setSearch({ priority: v });
-  const setRecClients = (v: string[]) => setSearch({ clients: v.join(",") });
-  const setRecLocations = (v: string[]) => setSearch({ locations: v.join(",") });
-  const setRecParts = (v: string[]) => setSearch({ parts: v.join(",") });
+  const setRecClients = (v: string[]) => setSearch({ clients: v.join("|") });
+  const setRecLocations = (v: string[]) => setSearch({ locations: v.join("|") });
+  const setRecParts = (v: string[]) => setSearch({ parts: v.join("|") });
 
   const qc = useQueryClient();
   const deleteMutation = useMutation({
