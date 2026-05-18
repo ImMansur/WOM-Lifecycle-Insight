@@ -905,21 +905,6 @@ export function RecommendationDetail({
               </>
             )}
 
-            {/* Extracted text */}
-            {rec.textPreview && (
-              <>
-                <Separator className="bg-border" />
-                <section>
-                  <h3 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-amber">
-                    <FileText className="size-3.5" /> Extracted Text Preview
-                  </h3>
-                  <div className="max-h-64 overflow-y-auto rounded-lg border border-border bg-background/60 p-4 font-mono text-[11px] leading-relaxed text-muted-foreground">
-                    {rec.textPreview}
-                  </div>
-                </section>
-              </>
-            )}
-
             {/* Actions */}
             <div className="sticky bottom-0 -mx-6 flex flex-wrap gap-2 border-t border-border bg-surface/95 px-6 py-4 backdrop-blur">
               <Button

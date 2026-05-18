@@ -36,6 +36,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Bell,
   Settings,
@@ -65,6 +66,7 @@ import {
   Eye,
   EyeOff,
   ShieldAlert,
+  Package,
 } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import { NotificationBell } from "@/components/wom/NotificationBell";
@@ -75,7 +77,7 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
-  Tooltip,
+  Tooltip as RechartsTooltip,
   Legend,
   ResponsiveContainer,
   Cell,
@@ -196,7 +198,7 @@ function MonthlyTrendChart({ actions }: { actions: Action[] }) {
             tickLine={false}
             width={30}
           />
-          <Tooltip content={<TrendTooltip />} cursor={{ fill: "rgba(128,128,128,0.06)", radius: 4 }} />
+          <RechartsTooltip content={<TrendTooltip />} cursor={{ fill: "rgba(128,128,128,0.06)", radius: 4 }} />
           <Legend
             wrapperStyle={{ fontSize: 11, paddingTop: 16 }}
             iconType="circle"
@@ -379,7 +381,7 @@ function CreateActionDialog({
             <Textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Additional contextâ€¦"
+              placeholder="Additional context…"
               rows={3}
               className="resize-none bg-background/60 border-border/60"
             />
@@ -418,7 +420,7 @@ function CreateActionDialog({
               disabled={!title.trim() || mutation.isPending}
               className="bg-primary text-primary-foreground hover:bg-primary/90 font-bold"
             >
-              {mutation.isPending ? "Creatingâ€¦" : "Create Action"}
+              {mutation.isPending ? "Creating…" : "Create Action"}
             </Button>
           </div>
         </div>
@@ -546,7 +548,7 @@ function ActionDetailSheet({
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="ghost" onClick={() => setConfirmDelete(false)} disabled={destroyMutation.isPending}>Cancel</Button>
             <Button variant="destructive" onClick={() => destroyMutation.mutate()} disabled={destroyMutation.isPending}>
-              {destroyMutation.isPending ? "Deletingâ€¦" : "Delete"}
+              {destroyMutation.isPending ? "Deleting…" : "Delete"}
             </Button>
           </div>
         </DialogContent>
@@ -728,13 +730,13 @@ function CommentThread({
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) send(); }}
-          placeholder="Add a commentâ€¦ (Ctrl+Enter to send)"
+          placeholder="Add a comment… (Ctrl+Enter to send)"
           rows={3}
           className="resize-none bg-background/60 border-border/60 focus:border-primary/50 text-sm"
         />
         <div className="flex justify-end">
           <Button onClick={send} disabled={!text.trim() || isAddPending} size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90 font-bold">
-            {isAddPending ? "Sendingâ€¦" : <><Send className="mr-2 size-3.5" />Send</>}
+            {isAddPending ? "Sending…" : <><Send className="mr-2 size-3.5" />Send</> }
           </Button>
         </div>
       </div>
@@ -758,6 +760,7 @@ function TicketSheet({
   const qc = useQueryClient();
   const { user } = useAuth();
   const isOverdue = rec?.status === "Expired / overdue";
+  const [pendingStatus, setPendingStatus] = useState<ActionStatus | null>(null);
 
   const getOrCreateActionId = async (): Promise<string> => {
     if (linkedAction) return linkedAction.id;
@@ -790,6 +793,7 @@ function TicketSheet({
       return patchAction(id, { status });
     },
     onMutate: async (newStatus) => {
+      setPendingStatus(newStatus);
       await qc.cancelQueries({ queryKey: ["actions"] });
       const prev = qc.getQueryData<Action[]>(["actions"]);
       if (linkedAction) {
@@ -800,13 +804,18 @@ function TicketSheet({
       return { prev };
     },
     onError: (_err, _vars, ctx) => {
+      setPendingStatus(null);
       if (ctx?.prev) qc.setQueryData(["actions"], ctx.prev);
     },
-    onSettled: () => qc.invalidateQueries({ queryKey: ["actions"] }),
+    onSettled: () => {
+      setPendingStatus(null);
+      qc.invalidateQueries({ queryKey: ["actions"] });
+    },
   });
 
   if (!rec) return null;
   const actionStatus: ActionStatus | null = linkedAction?.status ?? null;
+  const effectiveStatus = pendingStatus ?? actionStatus;
 
   function Field({ label, value, icon }: { label: string; value?: string | null; icon?: React.ReactNode }) {
     return (
@@ -870,16 +879,61 @@ function TicketSheet({
               <Field label="Location" value={rec.location} />
               <Field label="Certificate Date" value={rec.certificateDate} icon={<CalendarClock className="size-3" />} />
             </div>
-            {rec.serials.length > 0 && (
-              <div className="mt-4">
-                <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Serials</span>
-                <div className="mt-1 flex flex-wrap gap-1.5">
+          </section>
+
+          <Separator className="bg-border" />
+
+          {/* Parts & Serials */}
+          <section>
+            <h3 className="mb-4 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-primary">
+              <Package className="size-3.5" /> Parts &amp; Serials
+            </h3>
+            <div className="space-y-4">
+              <div>
+                <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                  Part Numbers ({rec.partNumbers.length})
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {rec.partNumbers.length === 0 && (
+                    <span className="text-sm text-muted-foreground">—</span>
+                  )}
+                  <TooltipProvider delayDuration={100}>
+                    {rec.partNumbers.map((p) => (
+                      <Tooltip key={p.number}>
+                        <TooltipTrigger asChild>
+                          <span className="cursor-default rounded border border-border bg-muted/50 px-2 py-1 font-mono text-xs text-foreground">
+                            {p.qty != null && (
+                              <span className="mr-1.5 rounded bg-primary/20 px-1 text-[10px] font-semibold text-primary">{p.qty}×</span>
+                            )}
+                            {p.number}
+                          </span>
+                        </TooltipTrigger>
+                        {p.description && (
+                          <TooltipContent side="top" className="max-w-xs text-xs">
+                            {p.description}
+                          </TooltipContent>
+                        )}
+                      </Tooltip>
+                    ))}
+                  </TooltipProvider>
+                </div>
+              </div>
+              <div>
+                <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                  Serial / Lot ({rec.serials.length})
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {rec.serials.length === 0 && (
+                    <span className="text-sm text-muted-foreground">—</span>
+                  )}
                   {rec.serials.map((s) => (
-                    <span key={s} className="rounded border border-border/60 bg-muted/50 px-2 py-0.5 font-mono text-[11px] text-muted-foreground">{s}</span>
+                    <span key={s} className="rounded border border-border/60 bg-muted/50 px-2 py-1 font-mono text-xs text-muted-foreground">
+                      <Hash className="mr-1 inline size-3" />{s}
+                    </span>
                   ))}
                 </div>
               </div>
-            )}
+            </div>
           </section>
 
           {/* AI Recommendation */}
@@ -904,7 +958,7 @@ function TicketSheet({
             </h3>
             <div className="flex gap-2">
               {(["in_progress", "closed", "failed"] as ActionStatus[]).map((s) => {
-                const active = actionStatus === s;
+                const active = effectiveStatus === s;
                 return (
                   <button
                     key={s} type="button"
