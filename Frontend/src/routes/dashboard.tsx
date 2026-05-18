@@ -889,9 +889,10 @@ function Dashboard() {
                             const score = getConfidenceScore(r);
                             const color = score >= 80 ? "text-emerald-500" : score >= 60 ? "text-orange-400" : "text-red-400";
                             const bar   = score >= 80 ? "bg-emerald-500"   : score >= 60 ? "bg-orange-400"   : "bg-red-400";
-                            const label = ocr ? " · OCR" : r.confidence === "Low" ? " · Low" : "";
+                            const label = ocr ? " · OCR" : ` · ${r.confidence}`;
                             return (
-                              <div className="flex items-center gap-1.5 mt-0.5" title={`Confidence: ${score}%${ocr ? " (OCR document)" : ""}${r.confidence === "Low" ? " (low extraction confidence)" : ""}`}>
+                              <div className="flex items-center gap-1.5 mt-0.5" title={`Confidence: ${score}% — ${r.confidence}${ocr ? " (OCR document)" : ""}`}>
+                                <span className="font-mono text-[9px] text-muted-foreground/50 uppercase tracking-wide">Conf.</span>
                                 <div className="h-1 w-10 rounded-full bg-border/40 overflow-hidden">
                                   <div className={cn("h-full rounded-full", bar)} style={{ width: `${score}%` }} />
                                 </div>
@@ -918,12 +919,12 @@ function Dashboard() {
                                   <span className={`size-1.5 rounded-full ${m.dot}`} />{m.label}
                                 </span>
                               )}
-                              {linked.comments.length > 0 && (
+                              {(() => { const n = linked.comments.filter((c) => c.type !== "ai_suggestion").length; return n > 0 ? (
                                 <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground/60">
                                   <MessageSquare className="size-3" />
-                                  {linked.comments.length} comment{linked.comments.length !== 1 ? "s" : ""}
+                                  {n} comment{n !== 1 ? "s" : ""}
                                 </span>
-                              )}
+                              ) : null; })()}
                             </div>
                           );
                         })()}

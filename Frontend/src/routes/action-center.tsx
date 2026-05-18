@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -11,7 +11,7 @@ import {
   deleteComment,
   suggestNextSteps,
 } from "@/lib/api";
-import type { Action, ActionStatus } from "@/lib/api";
+import type { Action, ActionStatus, ActionComment } from "@/lib/api";
 import type { Recommendation } from "@/lib/wom-data";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
@@ -445,13 +445,42 @@ function ActionDetailSheet({
 
   const statusMutation = useMutation({
     mutationFn: (status: ActionStatus) => patchAction(action!.id, { status }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["actions"] }),
+    onMutate: async (newStatus) => {
+      await qc.cancelQueries({ queryKey: ["actions"] });
+      const prev = qc.getQueryData<Action[]>(["actions"]);
+      qc.setQueryData<Action[]>(["actions"], (old = []) =>
+        old.map((a) => a.id === action!.id ? { ...a, status: newStatus } : a)
+      );
+      return { prev };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.prev) qc.setQueryData(["actions"], ctx.prev);
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ["actions"] }),
   });
 
   const addMutation = useMutation({
     mutationFn: (text: string) =>
       addComment(action!.id, text, user?.displayName ?? user?.email ?? "Admin"),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["actions"] }),
+    onMutate: async (text: string) => {
+      await qc.cancelQueries({ queryKey: ["actions"] });
+      const prev = qc.getQueryData<Action[]>(["actions"]);
+      const optimistic: ActionComment = {
+        id: `optimistic-${Date.now()}`,
+        text,
+        author: user?.displayName ?? user?.email ?? "Admin",
+        createdAt: new Date().toISOString(),
+        type: "update",
+      };
+      qc.setQueryData<Action[]>(["actions"], (old = []) =>
+        old.map((a) => a.id === action!.id ? { ...a, comments: [...a.comments, optimistic] } : a)
+      );
+      return { prev };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.prev) qc.setQueryData(["actions"], ctx.prev);
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ["actions"] }),
   });
 
   const deleteMutation = useMutation({
@@ -467,6 +496,8 @@ function ActionDetailSheet({
       onOpenChange(false);
     },
   });
+
+  const ai = useAiSuggestions(action?.id, action);
 
   if (!action) return null;
 
@@ -518,11 +549,10 @@ function ActionDetailSheet({
               onDeleteComment={(id) => deleteMutation.mutate(id)}
               isAddPending={addMutation.isPending}
               isDeletePending={deleteMutation.isPending}
+              onGenerateAI={ai.generate}
+              isGeneratingAI={ai.loading}
             />
 
-            <Separator className="bg-border" />
-
-            <AiSuggestions actionId={action.id} />
 
             <Separator className="bg-border" />
 
@@ -576,10 +606,34 @@ function RecStatusBadge({ status }: { status: string }) {
 
 // â”€â”€â”€ Comment Thread â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-function AiSuggestions({ actionId }: { actionId: string | undefined }) {
-  const [steps, setSteps] = useState<string[]>([]);
+function useAiSuggestions(actionId: string | undefined, action?: Action | null) {
+  const qc = useQueryClient();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const savedSteps = useMemo<string[]>(() => {
+    if (!action) return [];
+    const suggestions = action.comments.filter((c) => c.type === "ai_suggestion");
+    if (suggestions.length === 0) return [];
+    const latest = suggestions[suggestions.length - 1];
+    try {
+      const data = JSON.parse(latest.text);
+      return Array.isArray(data.steps) ? data.steps : [];
+    } catch {
+      return [];
+    }
+  }, [action]);
+
+  const [liveSteps, setLiveSteps] = useState<string[]>(savedSteps);
+
+  useEffect(() => {
+    setLiveSteps(savedSteps);
+    setError(null);
+  }, [actionId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    setLiveSteps(savedSteps);
+  }, [savedSteps]);
 
   async function generate() {
     if (!actionId) return;
@@ -587,7 +641,19 @@ function AiSuggestions({ actionId }: { actionId: string | undefined }) {
     setError(null);
     try {
       const result = await suggestNextSteps(actionId);
-      setSteps(result);
+      const suggestions = result.comments.filter((c) => c.type === "ai_suggestion");
+      const latest = suggestions[suggestions.length - 1];
+      let newSteps: string[] = [];
+      if (latest) {
+        try {
+          const data = JSON.parse(latest.text);
+          newSteps = Array.isArray(data.steps) ? data.steps : [];
+        } catch { /* ignore */ }
+      }
+      setLiveSteps(newSteps);
+      qc.setQueryData<Action[]>(["actions"], (old = []) =>
+        old.map((a) => (a.id === result.id ? result : a))
+      );
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -595,30 +661,22 @@ function AiSuggestions({ actionId }: { actionId: string | undefined }) {
     }
   }
 
-  return (
-    <section className="space-y-3">
-      <div className="flex items-center justify-between gap-2">
-        <h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground flex items-center gap-2">
-          <Sparkles className="size-3.5 text-primary" /> AI Suggested Next Steps
-        </h3>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={generate}
-          disabled={loading || !actionId}
-          className="h-7 gap-1.5 border-primary/30 text-primary hover:bg-primary/8 text-xs font-bold"
-        >
-          {loading
-            ? <><span className="size-3 animate-spin rounded-full border border-primary border-t-transparent" /> Generating…</>
-            : <><Sparkles className="size-3" /> {steps.length ? "Regenerate" : "Generate"}</>
-          }
-        </Button>
-      </div>
+  return { steps: liveSteps, loading, error, generate };
+}
 
+function AiSuggestions({ steps, loading, error }: { steps: string[]; loading: boolean; error: string | null }) {
+  if (!loading && steps.length === 0 && !error) return null;
+  return (
+    <section className="space-y-2">
       {error && (
         <p className="rounded-lg border border-destructive/30 bg-destructive/8 px-3 py-2 text-xs text-destructive">{error}</p>
       )}
-
+      {loading && steps.length === 0 && (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground/60 italic py-1">
+          <span className="size-3 animate-spin rounded-full border border-primary border-t-transparent" />
+          Generating AI steps…
+        </div>
+      )}
       {steps.length > 0 && (
         <ol className="space-y-2">
           {steps.map((step, i) => (
@@ -631,12 +689,6 @@ function AiSuggestions({ actionId }: { actionId: string | undefined }) {
           ))}
         </ol>
       )}
-
-      {!loading && steps.length === 0 && !error && (
-        <p className="text-xs text-muted-foreground/50 italic">
-          Click "Generate" to get AI-suggested next steps based on the ticket and comment thread.
-        </p>
-      )}
     </section>
   );
 }
@@ -647,15 +699,20 @@ function CommentThread({
   onDeleteComment,
   isAddPending,
   isDeletePending,
+  onGenerateAI,
+  isGeneratingAI,
 }: {
   action: Action | null;
   onAddComment: (text: string) => void;
   onDeleteComment: (id: string) => void;
   isAddPending: boolean;
   isDeletePending: boolean;
+  onGenerateAI?: () => void;
+  isGeneratingAI?: boolean;
 }) {
   const [text, setText] = useState("");
   const comments = action?.comments ?? [];
+  const userComments = comments.filter((c) => c.type !== "ai_suggestion");
 
   function send() {
     if (!text.trim()) return;
@@ -665,64 +722,98 @@ function CommentThread({
 
   return (
     <section className="space-y-4">
-      <h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground flex items-center gap-2">
-        <MessageSquare className="size-3.5" /> Comments
-        <span className="ml-auto rounded-full border border-border bg-muted px-1.5 py-0.5 text-[10px] font-bold">
-          {comments.length}
-        </span>
-      </h3>
-      {comments.length === 0 ? (
+      <div className="flex items-center gap-2">
+        <h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground flex items-center gap-2">
+          <MessageSquare className="size-3.5" /> Comments
+          <span className="rounded-full border border-border bg-muted px-1.5 py-0.5 text-[10px] font-bold">
+            {userComments.length}
+          </span>
+        </h3>
+        {onGenerateAI && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onGenerateAI}
+            disabled={isGeneratingAI || userComments.length === 0}
+            className="ml-auto h-7 gap-1.5 border-primary/30 text-primary hover:bg-primary/8 text-xs font-bold"
+          >
+            {isGeneratingAI
+              ? <><span className="size-3 animate-spin rounded-full border border-primary border-t-transparent" /> Generating…</>
+              : <><Sparkles className="size-3" /> AI Suggested Next Steps</>
+            }
+          </Button>
+        )}
+      </div>
+      {userComments.length === 0 ? (
         <div className="rounded-xl border border-dashed border-border/60 py-8 text-center text-sm text-muted-foreground/60">
           No comments yet. Add the first one below.
         </div>
       ) : (
-        <div className="space-y-3">
-          {comments.map((c) => (
-            <div key={c.id} className="group relative rounded-xl border border-border/60 bg-background/40 p-4">
-              <div className="flex items-center justify-between gap-2 mb-1.5">
-                <div className="flex items-center gap-2">
-                  <div className="flex size-6 items-center justify-center rounded-full bg-primary/15 text-[10px] font-bold text-primary">
-                    {(c.author[0] ?? "A").toUpperCase()}
+        <div className="max-h-[420px] overflow-y-auto space-y-3 pr-1">
+          {comments.map((c) => {
+            const isAI = c.author === "AI Assistant";
+            let aiSteps: string[] | null = null;
+            if (isAI) {
+              try {
+                const parsed = JSON.parse(c.text) as { steps?: string[] };
+                if (Array.isArray(parsed.steps)) aiSteps = parsed.steps;
+              } catch { /* fall through */ }
+            }
+
+            return (
+              <div
+                key={c.id}
+                className={cn(
+                  "group relative rounded-xl border p-4",
+                  isAI
+                    ? "border-primary/25 bg-primary/5"
+                    : "border-border/60 bg-background/40",
+                )}
+              >
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <div className="flex items-center gap-2">
+                    <div className={cn(
+                      "flex size-6 items-center justify-center rounded-full text-[10px] font-bold",
+                      isAI ? "bg-primary/20 text-primary" : "bg-primary/15 text-primary",
+                    )}>
+                      {isAI ? <Sparkles className="size-3" /> : (c.author[0] ?? "A").toUpperCase()}
+                    </div>
+                    <span className="text-xs font-semibold text-foreground">{c.author}</span>
+                    {isAI && (
+                      <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary tracking-wide">
+                        AI
+                      </span>
+                    )}
                   </div>
-                  <span className="text-xs font-semibold text-foreground">{c.author}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-[10px] text-muted-foreground/60">{fmtDate(c.createdAt)}</span>
+                    <button
+                      onClick={() => onDeleteComment(c.id)}
+                      disabled={isDeletePending}
+                      className="opacity-0 group-hover:opacity-100 rounded p-1 text-muted-foreground/50 hover:text-destructive hover:bg-destructive/10 transition-all"
+                    >
+                      <Trash2 className="size-3" />
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="font-mono text-[10px] text-muted-foreground/60">{fmtDate(c.createdAt)}</span>
-                  <button
-                    onClick={() => onDeleteComment(c.id)}
-                    disabled={isDeletePending}
-                    className="opacity-0 group-hover:opacity-100 rounded p-1 text-muted-foreground/50 hover:text-destructive hover:bg-destructive/10 transition-all"
-                  >
-                    <Trash2 className="size-3" />
-                  </button>
-                </div>
+
+                {aiSteps ? (
+                  <ol className="space-y-2 mt-1">
+                    {aiSteps.map((step, i) => (
+                      <li key={i} className="flex items-start gap-3 rounded-lg border border-primary/15 bg-background/60 px-3 py-2">
+                        <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/20 text-[9px] font-black text-primary mt-0.5">
+                          {i + 1}
+                        </span>
+                        <span className="text-sm text-foreground/90 leading-snug">{step}</span>
+                      </li>
+                    ))}
+                  </ol>
+                ) : (
+                  <p className="text-sm text-muted-foreground leading-relaxed">{c.text}</p>
+                )}
               </div>
-              {(() => {
-                if (c.author === "AI Assistant") {
-                  try {
-                    const parsed = JSON.parse(c.text) as { steps?: string[] };
-                    if (Array.isArray(parsed.steps)) {
-                      return (
-                        <ol className="space-y-1.5 mt-1">
-                          {parsed.steps.map((step, i) => (
-                            <li key={i} className="flex items-start gap-2.5">
-                              <span className="flex size-4 shrink-0 items-center justify-center rounded-full bg-primary/20 text-[9px] font-black text-primary mt-0.5">
-                                {i + 1}
-                              </span>
-                              <span className="text-sm text-muted-foreground leading-snug">{step}</span>
-                            </li>
-                          ))}
-                        </ol>
-                      );
-                    }
-                  } catch {
-                    // fall through to plain text
-                  }
-                }
-                return <p className="text-sm text-muted-foreground leading-relaxed">{c.text}</p>;
-              })()}
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
       <div className="space-y-2">
@@ -761,6 +852,7 @@ function TicketSheet({
   const { user } = useAuth();
   const isOverdue = rec?.status === "Expired / overdue";
   const [pendingStatus, setPendingStatus] = useState<ActionStatus | null>(null);
+  const ai = useAiSuggestions(linkedAction?.id, linkedAction);
 
   const getOrCreateActionId = async (): Promise<string> => {
     if (linkedAction) return linkedAction.id;
@@ -779,7 +871,26 @@ function TicketSheet({
       const id = await getOrCreateActionId();
       return addComment(id, text, user?.displayName ?? user?.email ?? "Admin");
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["actions"] }),
+    onMutate: async (text: string) => {
+      if (!linkedAction) return;
+      await qc.cancelQueries({ queryKey: ["actions"] });
+      const prev = qc.getQueryData<Action[]>(["actions"]);
+      const optimistic: ActionComment = {
+        id: `optimistic-${Date.now()}`,
+        text,
+        author: user?.displayName ?? user?.email ?? "Admin",
+        createdAt: new Date().toISOString(),
+        type: "update",
+      };
+      qc.setQueryData<Action[]>(["actions"], (old = []) =>
+        old.map((a) => a.id === linkedAction.id ? { ...a, comments: [...a.comments, optimistic] } : a)
+      );
+      return { prev };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.prev) qc.setQueryData(["actions"], ctx.prev);
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ["actions"] }),
   });
 
   const deleteMutation = useMutation({
@@ -946,11 +1057,6 @@ function TicketSheet({
 
           <Separator className="bg-border" />
 
-          {/* AI Suggested Next Steps */}
-          <AiSuggestions actionId={linkedAction?.id} />
-
-          <Separator className="bg-border" />
-
           {/* Ticket status */}
           <section>
             <h3 className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground flex items-center gap-2">
@@ -984,7 +1090,10 @@ function TicketSheet({
             onDeleteComment={(id) => deleteMutation.mutate(id)}
             isAddPending={addMutation.isPending}
             isDeletePending={deleteMutation.isPending}
+            onGenerateAI={ai.generate}
+            isGeneratingAI={ai.loading}
           />
+
         </div>
       </SheetContent>
     </Sheet>
@@ -1003,7 +1112,7 @@ function TicketCard({
   onClick: () => void;
 }) {
   const isOverdue = rec.status === "Expired / overdue";
-  const commentCount = linkedAction?.comments.length ?? 0;
+  const commentCount = linkedAction?.comments.filter((c) => c.type !== "ai_suggestion").length ?? 0;
   const actionStatus = linkedAction?.status;
   const tint =
     actionStatus === "closed"      ? "border-emerald-500/40 bg-emerald-500/5 hover:border-emerald-500/60 hover:shadow-emerald-500/5"

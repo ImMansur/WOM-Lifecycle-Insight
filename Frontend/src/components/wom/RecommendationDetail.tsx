@@ -855,52 +855,62 @@ export function RecommendationDetail({
                   {/* Comments */}
                   <div className="space-y-2">
                     <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                      Comments ({linkedAction.comments.length})
+                      Comments ({linkedAction.comments.filter((c) => c.type !== "ai_suggestion").length})
                     </div>
-                    {linkedAction.comments.length === 0 ? (
+                    {linkedAction.comments.filter((c) => c.type !== "ai_suggestion").length === 0 ? (
                       <p className="text-xs text-muted-foreground/50 italic">No comments yet.</p>
                     ) : (
-                      <div className="space-y-2">
-                        {linkedAction.comments.map((c) => (
-                          <div key={c.id} className="rounded-xl border border-border bg-surface-elevated px-4 py-3">
-                            <div className="flex items-center gap-2 mb-1">
-                              <span className="text-[11px] font-bold text-foreground">{c.author}</span>
-                              <span className="text-[10px] text-muted-foreground/60 font-mono">
-                                {new Date(c.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-                              </span>
+                      <div className="max-h-[420px] overflow-y-auto space-y-2 pr-1">
+                        {linkedAction.comments.map((c) => {
+                          const isAI = c.author === "AI Assistant";
+                          let aiSteps: string[] | null = null;
+                          if (isAI) {
+                            try {
+                              const parsed = JSON.parse(c.text) as { steps?: string[] };
+                              if (Array.isArray(parsed.steps)) aiSteps = parsed.steps;
+                            } catch { /* fall through */ }
+                          }
+                          return (
+                            <div
+                              key={c.id}
+                              className={`rounded-xl border px-4 py-3 ${
+                                isAI
+                                  ? "border-primary/25 bg-primary/5"
+                                  : "border-border bg-surface-elevated"
+                              }`}
+                            >
+                              <div className="flex items-center gap-2 mb-1">
+                                {isAI && (
+                                  <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary tracking-wide">
+                                    AI
+                                  </span>
+                                )}
+                                <span className="text-[11px] font-bold text-foreground">{c.author}</span>
+                                <span className="text-[10px] text-muted-foreground/60 font-mono">
+                                  {new Date(c.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                                </span>
+                              </div>
+                              {aiSteps ? (
+                                <ol className="space-y-2 mt-1">
+                                  {aiSteps.map((step, i) => (
+                                    <li key={i} className="flex items-start gap-3 rounded-lg border border-primary/15 bg-background/60 px-3 py-2">
+                                      <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/20 text-[9px] font-black text-primary mt-0.5">
+                                        {i + 1}
+                                      </span>
+                                      <span className="text-sm text-foreground/90 leading-snug">{step}</span>
+                                    </li>
+                                  ))}
+                                </ol>
+                              ) : (
+                                <p className="text-sm text-foreground/85 leading-snug">{c.text}</p>
+                              )}
                             </div>
-                            {(() => {
-                              if (c.author === "AI Assistant") {
-                                try {
-                                  const parsed = JSON.parse(c.text) as { steps?: string[] };
-                                  if (Array.isArray(parsed.steps)) {
-                                    return (
-                                      <ol className="space-y-1.5 mt-1">
-                                        {parsed.steps.map((step, i) => (
-                                          <li key={i} className="flex items-start gap-2.5">
-                                            <span className="flex size-4 shrink-0 items-center justify-center rounded-full bg-primary/20 text-[9px] font-black text-primary mt-0.5">
-                                              {i + 1}
-                                            </span>
-                                            <span className="text-sm text-foreground/85 leading-snug">{step}</span>
-                                          </li>
-                                        ))}
-                                      </ol>
-                                    );
-                                  }
-                                } catch {
-                                  // fall through to plain text
-                                }
-                              }
-                              return <p className="text-sm text-foreground/85 leading-snug">{c.text}</p>;
-                            })()}
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>
 
-                  {/* AI Suggestions */}
-                  <AiSuggestionsInline actionId={linkedAction.id} />
                 </section>
               </>
             )}
