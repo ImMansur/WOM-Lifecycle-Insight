@@ -19,7 +19,6 @@ import type { RecommendationPatch, Action } from "@/lib/api";
 import {
   FileText,
   Mail,
-  ClipboardList,
   Wrench,
   Calendar,
   Hash,
@@ -295,151 +294,6 @@ function EmailDraftDialog({
   );
 }
 
-function QuoteDraftDialog({
-  rec,
-  open,
-  onOpenChange,
-}: {
-  rec: Recommendation;
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-}) {
-  const customer = rec.customer ?? "Valued Customer";
-  const equipment = rec.equipment ?? "WOM Equipment";
-  const date = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
-  const validUntil = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
-
-  const quoteNumber = useMemo(() => `WOM-Q-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`, []);
-
-  const lineItems = useMemo(() => {
-    const base = [
-      { description: "Full 5-Year Recertification Service", detail: "Disassembly, inspection, NDT, reassembly & full documentation per API 6A / 16A", qty: 1, unitPrice: 4800 },
-      { description: "Hydrostatic & Pneumatic Pressure Testing", detail: "Full pressure test matrix per API specification — witnessed & certified", qty: 1, unitPrice: 1200 },
-      { description: "OEM Seal & Elastomer Replacement Kit", detail: "All primary and secondary sealing systems replaced with OEM-grade components", qty: 1, unitPrice: 875 },
-      { description: "Certificate of Conformance (COC) Documentation", detail: "Certified documentation package: material certs, test records, and inspection reports", qty: 1, unitPrice: 250 },
-      { description: "Return Freight, Crating & Insurance", detail: "Door-to-door logistics coordination with full cargo insurance", qty: 1, unitPrice: 420 },
-    ];
-    if (rec.status === "Expired / overdue") {
-      base.unshift({ description: "RUSH Processing Surcharge", detail: "Expedited 5–7 business day turnaround for overdue equipment", qty: 1, unitPrice: 650 });
-    }
-    return base;
-  }, [rec.status]);
-
-  const subtotal = lineItems.reduce((s, i) => s + i.qty * i.unitPrice, 0);
-  const tax = subtotal * 0.0825;
-  const total = subtotal + tax;
-
-  const fmt = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 2 });
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[min(90vw,780px)] max-w-none bg-surface border-border p-0 gap-0 overflow-hidden flex flex-col">
-        {/* Header */}
-        <div className="bg-accent px-6 py-4 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="size-8 rounded-full bg-white/10 grid place-items-center">
-              <ClipboardList className="size-4 text-white" />
-            </div>
-            <div>
-              <DialogTitle className="text-sm font-bold text-white tracking-tight">Service Quote</DialogTitle>
-              <p className="text-[11px] text-white/60 font-mono mt-0.5">AI-generated · demo only · not a real quote</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="rounded border border-amber/40 bg-amber/20 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-amber">Demo</span>
-            <Button size="sm" variant="ghost" onClick={() => onOpenChange(false)} className="h-8 px-3 text-white/80 hover:text-white hover:bg-white/10 text-xs font-bold">Close</Button>
-          </div>
-        </div>
-
-        {/* Quote meta */}
-        <div className="border-b border-border bg-background/30 px-6 py-4 grid grid-cols-2 gap-6 shrink-0">
-          <div className="space-y-3">
-            <div>
-              <div className="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground mb-1">Bill To</div>
-              <div className="text-sm font-semibold text-foreground">{customer}</div>
-            </div>
-            <div>
-              <div className="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground mb-1">Equipment</div>
-              <div className="text-xs text-foreground/80 leading-snug line-clamp-2">{equipment}</div>
-            </div>
-          </div>
-          <div className="space-y-2 text-right">
-            <div>
-              <div className="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground mb-1">Quote #</div>
-              <div className="text-sm font-mono font-bold text-foreground">{quoteNumber}</div>
-            </div>
-            <div className="grid grid-cols-2 gap-3 text-left">
-              <div>
-                <div className="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground mb-1">Date</div>
-                <div className="text-xs text-foreground">{date}</div>
-              </div>
-              <div>
-                <div className="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground mb-1">Valid Until</div>
-                <div className="text-xs text-foreground">{validUntil}</div>
-              </div>
-            </div>
-            {rec.salesOrder && (
-              <div>
-                <div className="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground mb-1">Ref SO</div>
-                <div className="text-xs font-mono text-foreground">{rec.salesOrder}</div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Line items */}
-        <div className="overflow-y-auto max-h-[38vh] shrink-0">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-foreground/[0.04] border-b border-border">
-                <th className="text-left px-6 py-2.5 text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground">Description</th>
-                <th className="text-center px-4 py-2.5 text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground w-16">Qty</th>
-                <th className="text-right px-6 py-2.5 text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground w-32">Unit Price</th>
-                <th className="text-right px-6 py-2.5 text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground w-32">Amount</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border/50">
-              {lineItems.map((item, i) => (
-                <tr key={i} className="hover:bg-foreground/[0.02]">
-                  <td className="px-6 py-3">
-                    <div className="font-semibold text-foreground text-xs">{item.description}</div>
-                    <div className="text-[11px] text-muted-foreground mt-0.5 leading-snug">{item.detail}</div>
-                  </td>
-                  <td className="px-4 py-3 text-center font-mono text-xs text-foreground">{item.qty}</td>
-                  <td className="px-6 py-3 text-right font-mono text-xs text-foreground">${fmt(item.unitPrice)}</td>
-                  <td className="px-6 py-3 text-right font-mono text-xs font-semibold text-foreground">${fmt(item.qty * item.unitPrice)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Totals */}
-        <div className="border-t border-border bg-background/30 px-6 py-4 flex justify-end shrink-0">
-          <div className="w-64 space-y-1.5">
-            <div className="flex justify-between text-xs text-muted-foreground">
-              <span>Subtotal</span><span className="font-mono">${fmt(subtotal)}</span>
-            </div>
-            <div className="flex justify-between text-xs text-muted-foreground">
-              <span>Sales Tax (8.25% TX)</span><span className="font-mono">${fmt(tax)}</span>
-            </div>
-            <div className="flex justify-between text-sm font-bold text-foreground border-t border-border pt-2">
-              <span>Total (USD)</span><span className="font-mono text-primary">${fmt(total)}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Demo disclaimer */}
-        <div className="border-t border-amber/20 px-6 py-3 bg-amber/5 shrink-0">
-          <p className="text-[11px] text-amber/80">
-            ⚠ This is an AI-generated demo quote for illustration purposes only. Pricing is not binding — real quotes will be produced via WOM's quoting system.
-          </p>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 function Field({
   label,
   value,
@@ -531,7 +385,6 @@ export function RecommendationDetail({
   linkedAction?: Action | null;
 }) {
   const [emailOpen, setEmailOpen] = useState(false);
-  const [quoteOpen, setQuoteOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<RecommendationPatch>({});
   const [viewDoc, setViewDoc] = useState(false);
@@ -1016,7 +869,30 @@ export function RecommendationDetail({
                                 {new Date(c.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                               </span>
                             </div>
-                            <p className="text-sm text-foreground/85 leading-snug">{c.text}</p>
+                            {(() => {
+                              if (c.author === "AI Assistant") {
+                                try {
+                                  const parsed = JSON.parse(c.text) as { steps?: string[] };
+                                  if (Array.isArray(parsed.steps)) {
+                                    return (
+                                      <ol className="space-y-1.5 mt-1">
+                                        {parsed.steps.map((step, i) => (
+                                          <li key={i} className="flex items-start gap-2.5">
+                                            <span className="flex size-4 shrink-0 items-center justify-center rounded-full bg-primary/20 text-[9px] font-black text-primary mt-0.5">
+                                              {i + 1}
+                                            </span>
+                                            <span className="text-sm text-foreground/85 leading-snug">{step}</span>
+                                          </li>
+                                        ))}
+                                      </ol>
+                                    );
+                                  }
+                                } catch {
+                                  // fall through to plain text
+                                }
+                              }
+                              return <p className="text-sm text-foreground/85 leading-snug">{c.text}</p>;
+                            })()}
                           </div>
                         ))}
                       </div>
@@ -1057,16 +933,6 @@ export function RecommendationDetail({
               </Button>
               <Button
                 variant="outline"
-                className="border-border disabled:opacity-40 disabled:cursor-not-allowed"
-                onClick={() => setQuoteOpen(true)}
-                disabled={withinLifecycle}
-                title={withinLifecycle ? "No quote needed — equipment is within its lifecycle" : undefined}
-              >
-                <ClipboardList className="mr-2 size-4" />
-                Generate Quote
-              </Button>
-              <Button
-                variant="outline"
                 className="border-amber-500/40 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20"
                 onClick={startEditing}
               >
@@ -1084,7 +950,6 @@ export function RecommendationDetail({
       </Sheet>
 
       <EmailDraftDialog rec={rec} open={emailOpen} onOpenChange={setEmailOpen} />
-      <QuoteDraftDialog rec={rec} open={quoteOpen} onOpenChange={setQuoteOpen} />
     </>
   );
 }

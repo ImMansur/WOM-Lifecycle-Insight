@@ -695,7 +695,30 @@ function CommentThread({
                   </button>
                 </div>
               </div>
-              <p className="text-sm text-muted-foreground leading-relaxed">{c.text}</p>
+              {(() => {
+                if (c.author === "AI Assistant") {
+                  try {
+                    const parsed = JSON.parse(c.text) as { steps?: string[] };
+                    if (Array.isArray(parsed.steps)) {
+                      return (
+                        <ol className="space-y-1.5 mt-1">
+                          {parsed.steps.map((step, i) => (
+                            <li key={i} className="flex items-start gap-2.5">
+                              <span className="flex size-4 shrink-0 items-center justify-center rounded-full bg-primary/20 text-[9px] font-black text-primary mt-0.5">
+                                {i + 1}
+                              </span>
+                              <span className="text-sm text-muted-foreground leading-snug">{step}</span>
+                            </li>
+                          ))}
+                        </ol>
+                      );
+                    }
+                  } catch {
+                    // fall through to plain text
+                  }
+                }
+                return <p className="text-sm text-muted-foreground leading-relaxed">{c.text}</p>;
+              })()}
             </div>
           ))}
         </div>
@@ -766,11 +789,24 @@ function TicketSheet({
       const id = await getOrCreateActionId();
       return patchAction(id, { status });
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["actions"] }),
+    onMutate: async (newStatus) => {
+      await qc.cancelQueries({ queryKey: ["actions"] });
+      const prev = qc.getQueryData<Action[]>(["actions"]);
+      if (linkedAction) {
+        qc.setQueryData<Action[]>(["actions"], (old = []) =>
+          old.map((a) => a.id === linkedAction.id ? { ...a, status: newStatus } : a)
+        );
+      }
+      return { prev };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.prev) qc.setQueryData(["actions"], ctx.prev);
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ["actions"] }),
   });
 
   if (!rec) return null;
-  const actionStatus: ActionStatus = linkedAction?.status ?? "in_progress";
+  const actionStatus: ActionStatus | null = linkedAction?.status ?? null;
 
   function Field({ label, value, icon }: { label: string; value?: string | null; icon?: React.ReactNode }) {
     return (
@@ -873,7 +909,7 @@ function TicketSheet({
                   <button
                     key={s} type="button"
                     onClick={() => !active && statusMutation.mutate(s)}
-                    disabled={active || statusMutation.isPending}
+                    disabled={statusMutation.isPending}
                     className={cn(
                       "flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-3 py-2.5 text-xs font-semibold transition-all",
                       active ? STATUS_META[s].badge + " ring-1 ring-current" : "border-border/60 text-muted-foreground hover:border-border disabled:opacity-40",
