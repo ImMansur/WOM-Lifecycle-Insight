@@ -4,8 +4,11 @@ export function StatusBadge({ status }: { status: string }) {
   const map: Record<string, string> = {
     "Expired / overdue": "bg-destructive/10 text-destructive border-destructive/20",
     "Mid-cycle service opportunity": "bg-emerald-500/10 text-emerald-600 border-emerald-500/20",
+    "Within lifecycle": "bg-sky-500/10 text-sky-600 border-sky-500/20",
+    "Due within 12 months": "bg-warning/10 text-warning border-warning/20",
     "Manual review": "bg-muted text-muted-foreground border-border/60",
     "Due soon": "bg-warning/10 text-warning border-warning/20",
+    "Reviewed": "bg-sky-500/10 text-sky-600 border-sky-500/20",
   };
   const cls = map[status] ?? "bg-muted text-muted-foreground border-border/60";
   return (

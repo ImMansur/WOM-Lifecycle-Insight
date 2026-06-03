@@ -3,7 +3,7 @@ import React, { createContext, useContext, useState, useCallback, useEffect } fr
 export interface Notification {
   id: string;
   fileName: string;
-  status: "success" | "error";
+  status: "success" | "error" | "warning";
   message: string;
   timestamp: number;
   read: boolean;

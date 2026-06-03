@@ -1,11 +1,18 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useState, useRef, useEffect } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ingestFiles, type IngestResponse } from "@/lib/api";
+import { ingestFiles, confirmIngestUpdates, type IngestResponse, type PendingDuplicate } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { LoadingScreen } from "@/components/wom/LoadingScreen";
 import { NotificationBell } from "@/components/wom/NotificationBell";
-import { Upload, FileText, X, AlertTriangle, CloudUpload, CheckCircle2, ShieldAlert, LogOut, User, ChevronDown } from "lucide-react";
+import { Upload, FileText, X, AlertTriangle, CloudUpload, CheckCircle2, ShieldAlert, LogOut, User, ChevronDown, Loader2 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -76,6 +83,9 @@ function UploadPage() {
   const [files, setFiles] = useState<File[]>([]);
   const [progress, setProgress] = useState(0);
   const [uploadResult, setUploadResult] = useState<IngestResponse | null>(null);
+  // Duplicate-confirmation popup state
+  const [pendingDuplicates, setPendingDuplicates] = useState<PendingDuplicate[]>([]);
+  const [savedCount, setSavedCount] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const qc = useQueryClient();
 
@@ -85,7 +95,14 @@ function UploadPage() {
       qc.invalidateQueries({ queryKey: ["recommendations"] });
 
       for (const rec of data.recommendations) {
-        addNotification({ fileName: rec.sourceFile, status: "success", message: "Processed successfully" });
+        const needsReview = rec.priority === "Manual review" || rec.extractionStatus !== "OK" || !rec.customer;
+        addNotification({
+          fileName: rec.sourceFile,
+          status: needsReview ? "warning" : "success",
+          message: needsReview
+            ? "Uploaded successfully · human review needed"
+            : "Processed successfully",
+        });
       }
       for (const err of data.errors) {
         const colonIdx = err.indexOf(": ");
@@ -94,12 +111,54 @@ function UploadPage() {
         addNotification({ fileName, status: "error", message });
       }
 
+      // If the backend flagged duplicates, pause here and let the admin decide.
+      if (data.pendingDuplicates && data.pendingDuplicates.length > 0) {
+        setSavedCount(data.processed);
+        setPendingDuplicates(data.pendingDuplicates);
+        return; // do NOT navigate yet
+      }
+
       navigate({ to: "/dashboard" });
     },
     onError: (err: Error) => {
-      addNotification({ fileName: "Upload", status: "error", message: err.message });
+      addNotification({
+        fileName: files.map((f) => f.name).join(", ") || "Upload",
+        status: "error",
+        message: `Upload failed · ${err.message}`,
+      });
     },
   });
+
+  const confirmMutation = useMutation({
+    mutationFn: confirmIngestUpdates,
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ["recommendations"] });
+      for (const rec of data.recommendations) {
+        addNotification({ fileName: rec.sourceFile, status: "success", message: "Replaced existing record" });
+      }
+      setPendingDuplicates([]);
+      setSavedCount(0);
+      navigate({ to: "/dashboard" });
+    },
+    onError: (err: Error) => {
+      addNotification({ fileName: "Confirm", status: "error", message: err.message });
+    },
+  });
+
+  const handleReplaceAll = () => {
+    const updates = pendingDuplicates.map((d) => ({
+      existingId: d.existingId,
+      newRecommendation: d.newRecommendation,
+    }));
+    confirmMutation.mutate(updates);
+  };
+
+  const handleCancelDuplicates = () => {
+    // Discard the new uploads — nothing gets replaced.
+    setPendingDuplicates([]);
+    setSavedCount(0);
+    navigate({ to: "/dashboard" });
+  };
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
@@ -325,6 +384,98 @@ function UploadPage() {
           </div>
         )}
       </main>
+
+      {/* Duplicate-confirmation popup — locked: admin MUST click one of the
+          two footer buttons. Escape key, outside click, and the X close button
+          are all disabled. */}
+      <Dialog open={pendingDuplicates.length > 0}>
+        <DialogContent
+          className="sm:max-w-lg bg-surface border-border [&>button]:hidden"
+          onEscapeKeyDown={(e) => e.preventDefault()}
+          onPointerDownOutside={(e) => e.preventDefault()}
+          onInteractOutside={(e) => e.preventDefault()}
+        >
+          <DialogHeader>
+            <DialogTitle className="font-display text-lg text-foreground flex items-center gap-2">
+              <AlertTriangle className="size-5 text-amber-500" />
+              Possible duplicates detected
+            </DialogTitle>
+            <DialogDescription className="text-muted-foreground text-sm">
+              {savedCount > 0 && (
+                <span className="block mb-1 text-emerald-600 font-medium">
+                  {savedCount} new record{savedCount !== 1 ? "s" : ""} saved.
+                </span>
+              )}
+              {pendingDuplicates.length} uploaded file
+              {pendingDuplicates.length !== 1 ? "s match" : " matches"} an existing record
+              (same file or same customer + sales order + certificate date).
+              Replace the existing record{pendingDuplicates.length !== 1 ? "s" : ""} or cancel
+              the upload.
+            </DialogDescription>
+          </DialogHeader>
+
+          <ul className="mt-2 max-h-[55vh] divide-y divide-border/30 overflow-y-auto rounded-lg border border-border/40">
+            {pendingDuplicates.map((d) => (
+              <li key={d.existingId + d.newRecommendation.id} className="p-3 space-y-2">
+                <div>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide font-semibold">
+                    Existing record
+                  </p>
+                  <p className="font-mono text-xs text-foreground truncate" title={d.existingFile}>
+                    {d.existingFile}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {d.existingCustomer ?? "—"} · SO {d.existingSalesOrder ?? "—"} · {d.existingCertificateDate ?? "—"}
+                  </p>
+                </div>
+                <div className="border-t border-border/30 pt-2">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide font-semibold">
+                    New upload
+                  </p>
+                  <p className="font-mono text-xs text-foreground truncate" title={d.newRecommendation.sourceFile}>
+                    {d.newRecommendation.sourceFile}
+                  </p>
+                </div>
+              </li>
+            ))}
+          </ul>
+
+          {confirmMutation.isError && (
+            <div className="mt-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2.5 text-xs text-destructive">
+              {(confirmMutation.error as Error).message}
+            </div>
+          )}
+
+          <div className="mt-4 flex justify-end gap-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleCancelDuplicates}
+              disabled={confirmMutation.isPending}
+            >
+              Cancel upload
+            </Button>
+            <Button
+              size="sm"
+              disabled={confirmMutation.isPending}
+              onClick={handleReplaceAll}
+              className="bg-accent hover:bg-accent/90 text-accent-foreground font-bold"
+            >
+              {confirmMutation.isPending ? (
+                <>
+                  <Loader2 className="mr-2 size-4 animate-spin" />
+                  Replacing…
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="mr-2 size-4" />
+                  Replace existing
+                </>
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

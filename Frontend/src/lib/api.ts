@@ -16,9 +16,24 @@ export interface RecommendationsResponse {
   summary: Summary;
 }
 
+export interface PendingDuplicate {
+  existingId: string;
+  existingFile: string;
+  existingCustomer: string | null;
+  existingSalesOrder: string | null;
+  existingCertificateDate: string | null;
+  newRecommendation: Recommendation;
+}
+
+export interface ConfirmDuplicateItem {
+  existingId: string;
+  newRecommendation: Recommendation;
+}
+
 export interface IngestResponse {
   processed: number;
   recommendations: Recommendation[];
+  pendingDuplicates: PendingDuplicate[];
   errors: string[];
 }
 
@@ -44,6 +59,21 @@ export async function ingestFiles(files: File[]): Promise<IngestResponse> {
   return res.json();
 }
 
+export async function confirmIngestUpdates(
+  updates: ConfirmDuplicateItem[],
+): Promise<IngestResponse> {
+  const res = await fetch(`${BASE}/api/ingest/confirm`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ updates }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Confirm failed (${res.status}): ${text}`);
+  }
+  return res.json();
+}
+
 export async function deleteRecommendation(id: string): Promise<void> {
   const res = await fetch(`${BASE}/api/recommendations/${encodeURIComponent(id)}`, {
     method: "DELETE",
@@ -51,6 +81,18 @@ export async function deleteRecommendation(id: string): Promise<void> {
   if (!res.ok && res.status !== 204) {
     throw new Error(`Delete failed: ${res.statusText}`);
   }
+}
+
+export async function deleteMultipleRecommendations(ids: string[]): Promise<{ deleted: number; not_found: string[] }> {
+  const res = await fetch(`${BASE}/api/recommendations/bulk-delete`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids }),
+  });
+  if (!res.ok) {
+    throw new Error(`Bulk delete failed: ${res.statusText}`);
+  }
+  return res.json();
 }
 
 export async function fetchDocumentUrl(filename: string): Promise<{ url: string; filename: string }> {
@@ -77,6 +119,7 @@ export interface RecommendationPatch {
   serials?: string[];
   partNumbers?: { number: string; description: string | null; qty: number | null }[];
   notes?: string;
+  priority?: "High" | "Low" | "Manual review";
 }
 
 export async function updateRecommendation(

@@ -1,6 +1,7 @@
 """Azure OpenAI service for structured extraction from CoC documents."""
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -24,12 +25,32 @@ Extract the following fields (use null when not found):
 - purchaseOrder: customer purchase order number
 - jobOrProject: rig name, project name, or job reference
 - location: physical site, city, country, or geographic location where the equipment is deployed or the work was performed (e.g. "Aberdeen, UK", "Gulf of Mexico", "Stavanger, Norway"). Use null if no location is stated.
-- equipment: full equipment description / product name
-- partNumbers: array of objects, one per part found ANYWHERE in the document — including tables, BOM lists, line items, and drawing references. Scan the entire document top-to-bottom. Never stop at the first one. Each object must have:
-    - "number": the part number / model number / WOM item code (string)
-    - "description": the human-readable description of that part as written on the document, or null if not given
-    - "qty": integer quantity from the BOM or line item, or null if not stated
-- serials: array of ALL serial numbers, lot numbers, heat numbers, assembly serials, and reference standards (e.g. MR-01-75) found anywhere in the document
+- equipment: the top-level assembly / product name being certified — e.g.
+  "15,000 PSI W.P. CHOKE & KILL MANIFOLD", "WOM TYPE WU 11\" 15K SINGLE GATE VALVE",
+  "1-13/16\" 10K MODEL 200M MANUAL GATE VALVE". Look for labels such as
+  "ASSEMBLY DESCRIPTION", "EQUIPMENT DESCRIPTION", "PRODUCT DESCRIPTION",
+  "ITEM DESCRIPTION", "DESCRIPTION OF GOODS", or the bold title in the cert header.
+  This should be the overall assembly name, NOT a component part number.
+  Use null only if no assembly-level description exists.
+- lineItems: array of objects, one per equipment **line item** on the CoC. Each
+  CoC may have one or many line items (a single row on the cert OR rows from
+  a Bill-of-Materials table). The relationship between description, part
+  number, quantity, and serial number(s) on the SAME row must be preserved.
+  Each object must have:
+    - "description": the description / product name for this row, or null
+    - "partNumber": the part number / model number / WOM item code for this row, or null
+    - "qty": integer quantity for this row, or null if not stated
+    - "serials": array of serial numbers / lot numbers belonging to THIS specific
+      part. If the cert lists "EQUIPMENT SERIAL NO: A-28717" alongside
+      "PART NO: M4800 QUANTITY: 1", then A-28717 belongs to M4800.
+      Use [] if no serials are listed for this row.
+  Scan the entire document top-to-bottom; never stop at the first row.
+- partNumbers: array of objects (legacy flat list, used as a fallback when
+  lineItems cannot be grouped). Each: { "number", "description", "qty" }.
+  You may leave this empty if lineItems is populated.
+- serials: array of any serial / lot / heat numbers that could NOT be
+  attributed to a specific line item (e.g. reference standards like MR-01-75).
+  Per-part serials should go inside lineItems[*].serials, not here.
 - certificateDate: ISO date (YYYY-MM-DD) from "Certificate Date" or "Date" field
 - testedDate: ISO date (YYYY-MM-DD) from "Test Date" or "Tested Date" field, else null
 - textPreview: first ~2000 characters of meaningful document text (a concise excerpt, preserving as much structure as possible)
@@ -185,7 +206,7 @@ async def process_document(
 ) -> Recommendation:
     """Call Azure OpenAI to extract structured CoC fields and build a Recommendation."""
 
-    rec_id = _generate_id(filename)
+    rec_id = _generate_id(filename, file_bytes)
 
     if is_ocr_needed or not extracted_text.strip():
         return Recommendation(
@@ -209,9 +230,8 @@ async def process_document(
     )
     deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4.1")
 
-    # Truncate text to avoid token limits (~24 000 chars ≈ 6 000 tokens)
-    # Larger window ensures full BOM/parts tables are captured
-    truncated_text = extracted_text[:24000]
+    # 80 000 tokens × ~4 chars/token ≈ 320 000 chars
+    truncated_text = extracted_text[:320000]
 
     user_msg = _USER_TEMPLATE.format(filename=filename, text=truncated_text)
 
@@ -223,20 +243,22 @@ async def process_document(
                 {"role": "user", "content": user_msg},
             ],
             temperature=0,
-            max_tokens=4096,
+            max_tokens=8192,
             response_format={"type": "json_object"},
         )
         raw_json = response.choices[0].message.content or "{}"
+        finish_reason = response.choices[0].finish_reason
+        if finish_reason == "length":
+            logger.warning(
+                "OpenAI response was truncated for %s (finish_reason=length, %d chars). "
+                "Output may be incomplete JSON.",
+                filename, len(raw_json),
+            )
     except Exception as exc:
         logger.error("OpenAI extraction failed for %s: %s", filename, exc)
         raw_json = "{}"
 
-    try:
-        data: dict[str, Any] = json.loads(raw_json)
-    except json.JSONDecodeError:
-        # Try to pull the first JSON object out of the string
-        match = re.search(r"\{.*\}", raw_json, re.DOTALL)
-        data = json.loads(match.group()) if match else {}
+    data: dict[str, Any] = _safe_parse_json(raw_json, filename)
 
     lifecycle = _compute_lifecycle_fields(data.get("certificateDate"))
     rec_text, invoice_basis = _build_recommendation_text(rec_id, data, lifecycle)
@@ -254,11 +276,30 @@ async def process_document(
     else:
         priority = "Manual review"
 
-    # Normalise partNumbers → List[PartEntry]
-    # GPT may return [{"number": ..., "description": ...}] or ["plain string"]
-    from models import PartEntry
+    # Normalise lineItems → List[LineItem]  (preserves description ↔ part ↔ serials)
+    from models import LineItem, PartEntry
+    raw_line_items = data.get("lineItems") or []
+    line_items: list[LineItem] = []
+    for li in raw_line_items:
+        if not isinstance(li, dict):
+            continue
+        raw_qty = li.get("qty")
+        try:
+            qty = int(raw_qty) if raw_qty is not None else None
+        except (TypeError, ValueError):
+            qty = None
+        raw_serials = li.get("serials") or []
+        serials_for_row = [str(s).strip() for s in raw_serials if str(s).strip()]
+        line_items.append(LineItem(
+            description=str(li["description"]).strip() if li.get("description") else None,
+            partNumber=str(li["partNumber"]).strip() if li.get("partNumber") else None,
+            qty=qty,
+            serials=serials_for_row,
+        ))
+
+    # Normalise legacy partNumbers → List[PartEntry]
     raw_parts = data.get("partNumbers") or []
-    part_numbers = []
+    part_numbers: list[PartEntry] = []
     for p in raw_parts:
         if isinstance(p, dict):
             raw_qty = p.get("qty")
@@ -273,7 +314,47 @@ async def process_document(
             ))
         elif isinstance(p, str) and p.strip():
             part_numbers.append(PartEntry(number=p.strip(), description=None, qty=None))
+
+    # Collect unattributed serials returned at the top level
     serials = [str(s) for s in (data.get("serials") or [])]
+
+    # Derive flat arrays from lineItems so legacy UI keeps working
+    if line_items:
+        derived_parts = [
+            PartEntry(number=li.partNumber, description=li.description, qty=li.qty)
+            for li in line_items if li.partNumber
+        ]
+        # Merge with any explicit partNumbers, de-dup by number
+        seen = {p.number for p in derived_parts}
+        for p in part_numbers:
+            if p.number and p.number not in seen:
+                derived_parts.append(p)
+                seen.add(p.number)
+        part_numbers = derived_parts
+
+        # Aggregate all serials (per-row + top-level), de-dup, preserve order
+        seen_s: set[str] = set()
+        merged_serials: list[str] = []
+        for li in line_items:
+            for s in li.serials:
+                if s and s not in seen_s:
+                    merged_serials.append(s); seen_s.add(s)
+        for s in serials:
+            if s and s not in seen_s:
+                merged_serials.append(s); seen_s.add(s)
+        serials = merged_serials
+    elif part_numbers:
+        # GPT returned the legacy shape only — synthesize a single line item per
+        # part so the detail view still shows something structured.
+        line_items = [
+            LineItem(
+                description=p.description,
+                partNumber=p.number,
+                qty=p.qty,
+                serials=[],
+            )
+            for p in part_numbers
+        ]
 
     logger.info(
         "Built recommendation for %s | status=%s | priority=%s | confidence=%s",
@@ -293,6 +374,7 @@ async def process_document(
         equipment=data.get("equipment") or None,
         partNumbers=part_numbers,
         serials=serials,
+        lineItems=line_items,
         certificateDate=data.get("certificateDate") or None,
         testedDate=data.get("testedDate") or None,
         lifecycleDate=lifecycle["lifecycleDate"],
@@ -309,11 +391,96 @@ async def process_document(
     )
 
 
-def _generate_id(filename: str) -> str:
-    """Generate an ID from filename or a short UUID."""
+def _safe_parse_json(raw: str, filename: str) -> dict[str, Any]:
+    """Parse JSON returned by the LLM, recovering from common truncation issues.
+
+    Strategy:
+      1. Try a strict ``json.loads``.
+      2. If that fails (typically because the response was cut off mid-string
+         when ``max_tokens`` was hit), progressively trim trailing bytes until
+         a valid prefix parses. We try cutting at the last ``,`` then ``"`` then
+         walk back one char at a time, closing any open brackets we tracked.
+      3. As a last resort, return ``{}`` so the record is saved as
+         "Needs manual review" instead of crashing the whole batch.
+    """
+    if not raw or not raw.strip():
+        return {}
+
+    # 1. Strict parse
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        pass
+
+    # 2. Truncate trailing junk and close open brackets/braces
+    #    Walk the string, tracking string-vs-code state and the open-bracket
+    #    stack. When the response was cut off mid-string, the safe move is to
+    #    chop everything after the last *complete* key-value pair.
+    last_safe_idx = -1  # index where we last saw a balanced ", \" outside a string
+    depth_stack: list[str] = []
+    in_string = False
+    escape = False
+    for i, ch in enumerate(raw):
+        if escape:
+            escape = False
+            continue
+        if ch == "\\" and in_string:
+            escape = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch in "{[":
+            depth_stack.append("}" if ch == "{" else "]")
+        elif ch in "}]":
+            if depth_stack and depth_stack[-1] == ch:
+                depth_stack.pop()
+        elif ch == "," and depth_stack:
+            # Position just before this comma is a safe truncation point —
+            # everything up to here is a complete value inside the current
+            # container.
+            last_safe_idx = i
+
+    if last_safe_idx > 0:
+        repaired = raw[:last_safe_idx] + "".join(reversed(depth_stack))
+        try:
+            return json.loads(repaired)
+        except json.JSONDecodeError:
+            pass
+
+    # 3. Last-ditch regex match on the longest plausible JSON object
+    match = re.search(r"\{.*\}", raw, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group())
+        except json.JSONDecodeError:
+            pass
+
+    logger.error(
+        "Could not parse OpenAI JSON for %s after recovery attempts (len=%d). "
+        "Returning empty extraction.",
+        filename, len(raw),
+    )
+    return {}
+
+
+def _generate_id(filename: str, file_bytes: bytes | None = None) -> str:
+    """Generate a deterministic record ID.
+
+    Format: ``<cleanStem>-<sha256[:8]>``  (e.g. ``A45786-A38244-9f1b3a02``)
+
+    The 8-char content-hash suffix guarantees:
+      - identical bytes → identical ID  (true duplicate → safe overwrite)
+      - any byte difference → different ID  (no silent overwrite of
+        unrelated records that happen to share a filename)
+    """
     stem = Path(filename).stem
-    # Keep alphanumeric + dashes, max 20 chars
-    clean = re.sub(r"[^A-Za-z0-9\-]", "", stem)[:20]
+    clean = re.sub(r"[^A-Za-z0-9\-]", "", stem)[:20] or "doc"
+    if file_bytes:
+        digest = hashlib.sha256(file_bytes).hexdigest()[:8]
+        return f"{clean}-{digest}"
     return clean if clean else uuid.uuid4().hex[:8].upper()
 
 

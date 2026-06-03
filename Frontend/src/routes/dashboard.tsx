@@ -2,13 +2,15 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { Recommendation } from "@/lib/wom-data";
-import { fetchRecommendations, ingestFiles, deleteRecommendation, fetchActions, exportToExcel } from "@/lib/api";
-import type { Action } from "@/lib/api";
+import { groupSerialsByPart } from "@/lib/wom-data";
+import { fetchRecommendations, ingestFiles, confirmIngestUpdates, deleteRecommendation, deleteMultipleRecommendations, fetchActions, exportToExcel } from "@/lib/api";
+import type { Action, PendingDuplicate } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { StatusBadge, PriorityChip } from "@/components/wom/StatusBadge";
 import { RecommendationDetail } from "@/components/wom/RecommendationDetail";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -58,6 +60,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { NotificationBell } from "@/components/wom/NotificationBell";
 import { useAuth } from "@/lib/auth-context";
 import { LifecycleRulesTab } from "@/components/wom/LifecycleRulesTab";
@@ -68,6 +71,8 @@ import {
   type TimeFilter,
   type PriorityFilter,
 } from "@/components/wom/HomeTab";
+
+type FilterKey = string;
 
 export const Route = createFileRoute("/dashboard")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -96,18 +101,71 @@ function UploadDialog({
   const [files, setFiles] = useState<File[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Duplicate-confirmation state — populated after a successful ingest
+  // when the backend reports new records that collide with existing
+  // (customer + sales-order + cert-date) keys.
+  const [pendingDuplicates, setPendingDuplicates] = useState<PendingDuplicate[]>([]);
+  // existingId -> "replace" (overwrite) | "skip" (discard new record)
+  const [decisions, setDecisions] = useState<Record<string, "replace" | "skip">>({});
+  // Optional banner: how many records from the last batch were saved cleanly
+  const [savedCount, setSavedCount] = useState<number>(0);
+
   const qc = useQueryClient();
   const mutation = useMutation({
     mutationFn: ingestFiles,
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ["recommendations"] });
-      setFiles([]);
-      onOpenChange(false);
+      setSavedCount(data.processed);
       if (data.errors.length > 0) {
         console.warn("Ingest warnings:", data.errors);
       }
+      if (data.pendingDuplicates.length > 0) {
+        // Switch the dialog into "resolve duplicates" mode — default every
+        // collision to REPLACE (the admin's most common intent: re-uploaded
+        // a corrected version of an existing CoC).
+        setPendingDuplicates(data.pendingDuplicates);
+        setDecisions(
+          Object.fromEntries(
+            data.pendingDuplicates.map((d) => [d.existingId, "replace" as const]),
+          ),
+        );
+        setFiles([]); // file list no longer relevant
+      } else {
+        // Clean run — close the dialog
+        setFiles([]);
+        onOpenChange(false);
+      }
     },
   });
+
+  const confirmMutation = useMutation({
+    mutationFn: confirmIngestUpdates,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["recommendations"] });
+      setPendingDuplicates([]);
+      setDecisions({});
+      setSavedCount(0);
+      onOpenChange(false);
+    },
+  });
+
+  const handleConfirmDuplicates = () => {
+    const updates = pendingDuplicates
+      .filter((d) => decisions[d.existingId] === "replace")
+      .map((d) => ({
+        existingId: d.existingId,
+        newRecommendation: d.newRecommendation,
+      }));
+    if (updates.length === 0) {
+      // Nothing to update — admin chose "Skip" on all of them
+      setPendingDuplicates([]);
+      setDecisions({});
+      setSavedCount(0);
+      onOpenChange(false);
+      return;
+    }
+    confirmMutation.mutate(updates);
+  };
 
   const addFiles = (incoming: FileList | File[]) => {
     const filtered = Array.from(incoming).filter((f) =>
@@ -123,115 +181,255 @@ function UploadDialog({
     setFiles((prev) => prev.filter((f) => f.name !== name));
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        // Block closing while a network call is in flight or duplicates are
+        // pending — the admin needs to make a deliberate choice.
+        if (!v && (mutation.isPending || confirmMutation.isPending)) return;
+        if (!v) {
+          setFiles([]);
+          setPendingDuplicates([]);
+          setDecisions({});
+          setSavedCount(0);
+        }
+        onOpenChange(v);
+      }}
+    >
       <DialogContent className="sm:max-w-lg bg-surface border-border">
-        <DialogHeader>
-          <DialogTitle className="font-display text-lg text-foreground">
-            Ingest Documents
-          </DialogTitle>
-          <DialogDescription className="text-muted-foreground text-sm">
-            Upload PDF, DOC, or DOCX certificates of conformance. Each file is
-            processed through Document Intelligence and the AI Extraction Engine.
-          </DialogDescription>
-        </DialogHeader>
+        {pendingDuplicates.length > 0 ? (
+          // ─── Resolve duplicates view ──────────────────────────────────────
+          <>
+            <DialogHeader>
+              <DialogTitle className="font-display text-lg text-foreground flex items-center gap-2">
+                <AlertTriangle className="size-5 text-amber-500" />
+                Possible duplicates detected
+              </DialogTitle>
+              <DialogDescription className="text-muted-foreground text-sm">
+                {savedCount > 0 && (
+                  <span className="block mb-1 text-emerald-600 font-medium">
+                    {savedCount} new record{savedCount !== 1 ? "s" : ""} saved.
+                  </span>
+                )}
+                {pendingDuplicates.length} uploaded file
+                {pendingDuplicates.length !== 1 ? "s match" : " matches"} an existing record
+                (same customer, sales order, and certificate date). Choose what
+                to do with each one.
+              </DialogDescription>
+            </DialogHeader>
 
-        {/* Drop zone */}
-        <div
-          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={(e) => {
-            e.preventDefault();
-            setDragOver(false);
-            addFiles(e.dataTransfer.files);
-          }}
-          onClick={() => inputRef.current?.click()}
-          className={`mt-2 flex cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed py-10 transition-colors ${dragOver
-            ? "border-primary bg-primary/5"
-            : "border-border/60 bg-background/20 hover:border-primary/50 hover:bg-primary/5"
-            }`}
-        >
-          <CloudUpload className="size-10 text-muted-foreground/50" />
-          <div className="text-center">
-            <p className="text-sm font-semibold text-foreground">
-              Drop files here or click to browse
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">PDF, DOC, DOCX — up to 50 MB each</p>
-          </div>
-          <input
-            ref={inputRef}
-            type="file"
-            multiple
-            accept=".pdf,.doc,.docx"
-            className="hidden"
-            onChange={(e) => e.target.files && addFiles(e.target.files)}
-          />
-        </div>
+            <ul className="mt-2 max-h-[55vh] divide-y divide-border/30 overflow-y-auto rounded-lg border border-border/40">
+              {pendingDuplicates.map((d) => {
+                const decision = decisions[d.existingId] ?? "replace";
+                return (
+                  <li key={d.existingId + d.newRecommendation.id} className="p-3 space-y-2">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs text-muted-foreground uppercase tracking-wide font-semibold">
+                          Existing record
+                        </p>
+                        <p className="font-mono text-xs text-foreground truncate" title={d.existingFile}>
+                          {d.existingFile}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {d.existingCustomer ?? "—"} · SO {d.existingSalesOrder ?? "—"} · {d.existingCertificateDate ?? "—"}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-start justify-between gap-3 border-t border-border/30 pt-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs text-muted-foreground uppercase tracking-wide font-semibold">
+                          New upload
+                        </p>
+                        <p className="font-mono text-xs text-foreground truncate" title={d.newRecommendation.sourceFile}>
+                          {d.newRecommendation.sourceFile}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setDecisions((p) => ({ ...p, [d.existingId]: "replace" }))
+                        }
+                        className={`flex-1 rounded-md border px-2 py-1.5 text-xs font-semibold transition-colors ${decision === "replace"
+                          ? "border-accent bg-accent text-accent-foreground"
+                          : "border-border/60 bg-background/40 text-muted-foreground hover:border-accent/50"
+                          }`}
+                      >
+                        Replace existing
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setDecisions((p) => ({ ...p, [d.existingId]: "skip" }))
+                        }
+                        className={`flex-1 rounded-md border px-2 py-1.5 text-xs font-semibold transition-colors ${decision === "skip"
+                          ? "border-destructive bg-destructive/10 text-destructive"
+                          : "border-border/60 bg-background/40 text-muted-foreground hover:border-destructive/50"
+                          }`}
+                      >
+                        Skip new upload
+                      </button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
 
-        {/* File list */}
-        {files.length > 0 && (
-          <ul className="mt-3 max-h-48 divide-y divide-border/30 overflow-y-auto rounded-lg border border-border/40">
-            {files.map((f) => (
-              <li key={f.name} className="flex items-center gap-3 px-3 py-2.5">
-                <FileText className="size-4 shrink-0 text-primary/60" />
-                <span className="min-w-0 flex-1 truncate font-mono text-xs text-foreground">
-                  {f.name}
-                </span>
-                <span className="shrink-0 text-[10px] text-muted-foreground">
-                  {(f.size / 1024 / 1024).toFixed(1)} MB
-                </span>
-                <button
-                  onClick={(e) => { e.stopPropagation(); removeFile(f.name); }}
-                  className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-destructive transition-colors"
-                >
-                  <X className="size-3.5" />
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-
-        {/* Error banner */}
-        {mutation.isError && (
-          <div className="mt-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2.5 text-xs text-destructive">
-            {(mutation.error as Error).message}
-          </div>
-        )}
-
-        {/* Partial errors from API */}
-        {mutation.isSuccess && mutation.data.errors.length > 0 && (
-          <div className="mt-2 space-y-1 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2.5 text-xs text-warning">
-            {mutation.data.errors.map((e, i) => <p key={i}>{e}</p>)}
-          </div>
-        )}
-
-        <div className="mt-4 flex justify-end gap-3">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => { onOpenChange(false); setFiles([]); }}
-            disabled={mutation.isPending}
-          >
-            Cancel
-          </Button>
-          <Button
-            size="sm"
-            disabled={files.length === 0 || mutation.isPending}
-            onClick={() => mutation.mutate(files)}
-            className="bg-accent hover:bg-accent/90 text-accent-foreground font-bold"
-          >
-            {mutation.isPending ? (
-              <>
-                <Loader2 className="mr-2 size-4 animate-spin" />
-                Processing…
-              </>
-            ) : (
-              <>
-                <Upload className="mr-2 size-4" />
-                Process {files.length} file{files.length !== 1 ? "s" : ""}
-              </>
+            {confirmMutation.isError && (
+              <div className="mt-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2.5 text-xs text-destructive">
+                {(confirmMutation.error as Error).message}
+              </div>
             )}
-          </Button>
-        </div>
+
+            <div className="mt-4 flex justify-end gap-3">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  // Skip everything — close without applying any updates
+                  setPendingDuplicates([]);
+                  setDecisions({});
+                  setSavedCount(0);
+                  onOpenChange(false);
+                }}
+                disabled={confirmMutation.isPending}
+              >
+                Cancel all
+              </Button>
+              <Button
+                size="sm"
+                disabled={confirmMutation.isPending}
+                onClick={handleConfirmDuplicates}
+                className="bg-accent hover:bg-accent/90 text-accent-foreground font-bold"
+              >
+                {confirmMutation.isPending ? (
+                  <>
+                    <Loader2 className="mr-2 size-4 animate-spin" />
+                    Applying…
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="mr-2 size-4" />
+                    Apply decisions
+                  </>
+                )}
+              </Button>
+            </div>
+          </>
+        ) : (
+          // ─── Upload view ──────────────────────────────────────────────────
+          <>
+            <DialogHeader>
+              <DialogTitle className="font-display text-lg text-foreground">
+                Ingest Documents
+              </DialogTitle>
+              <DialogDescription className="text-muted-foreground text-sm">
+                Upload PDF, DOC, or DOCX certificates of conformance. Each file is
+                processed through Document Intelligence and the AI Extraction Engine.
+              </DialogDescription>
+            </DialogHeader>
+
+            {/* Drop zone */}
+            <div
+              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragOver(false);
+                addFiles(e.dataTransfer.files);
+              }}
+              onClick={() => inputRef.current?.click()}
+              className={`mt-2 flex cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed py-10 transition-colors ${dragOver
+                ? "border-primary bg-primary/5"
+                : "border-border/60 bg-background/20 hover:border-primary/50 hover:bg-primary/5"
+                }`}
+            >
+              <CloudUpload className="size-10 text-muted-foreground/50" />
+              <div className="text-center">
+                <p className="text-sm font-semibold text-foreground">
+                  Drop files here or click to browse
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">PDF, DOC, DOCX — up to 200 MB each</p>
+              </div>
+              <input
+                ref={inputRef}
+                type="file"
+                multiple
+                accept=".pdf,.doc,.docx"
+                className="hidden"
+                onChange={(e) => e.target.files && addFiles(e.target.files)}
+              />
+            </div>
+
+            {/* File list */}
+            {files.length > 0 && (
+              <ul className="mt-3 max-h-48 divide-y divide-border/30 overflow-y-auto rounded-lg border border-border/40">
+                {files.map((f) => (
+                  <li key={f.name} className="flex items-center gap-3 px-3 py-2.5">
+                    <FileText className="size-4 shrink-0 text-primary/60" />
+                    <span className="min-w-0 flex-1 truncate font-mono text-xs text-foreground">
+                      {f.name}
+                    </span>
+                    <span className="shrink-0 text-[10px] text-muted-foreground">
+                      {(f.size / 1024 / 1024).toFixed(1)} MB
+                    </span>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); removeFile(f.name); }}
+                      className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-destructive transition-colors"
+                    >
+                      <X className="size-3.5" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {/* Error banner */}
+            {mutation.isError && (
+              <div className="mt-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2.5 text-xs text-destructive">
+                {(mutation.error as Error).message}
+              </div>
+            )}
+
+            {/* Partial errors from API */}
+            {mutation.isSuccess && mutation.data.errors.length > 0 && (
+              <div className="mt-2 space-y-1 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2.5 text-xs text-warning">
+                {mutation.data.errors.map((e, i) => <p key={i}>{e}</p>)}
+              </div>
+            )}
+
+            <div className="mt-4 flex justify-end gap-3">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => { onOpenChange(false); setFiles([]); }}
+                disabled={mutation.isPending}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                disabled={files.length === 0 || mutation.isPending}
+                onClick={() => mutation.mutate(files)}
+                className="bg-accent hover:bg-accent/90 text-accent-foreground font-bold"
+              >
+                {mutation.isPending ? (
+                  <>
+                    <Loader2 className="mr-2 size-4 animate-spin" />
+                    Processing…
+                  </>
+                ) : (
+                  <>
+                    <Upload className="mr-2 size-4" />
+                    Process {files.length} file{files.length !== 1 ? "s" : ""}
+                  </>
+                )}
+              </Button>
+            </div>
+          </>
+        )}
       </DialogContent>
     </Dialog>
   );
@@ -315,6 +513,8 @@ function Dashboard() {
   const [open, setOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [page, setPage] = useState(0);
   const [sortKey, setSortKey] = useState<"priority" | "customer" | "recertDue" | "status" | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
@@ -330,7 +530,7 @@ function Dashboard() {
   const recParts = search.parts ? search.parts.split("|") : [] as string[];
 
   const setSearch = (patch: Partial<typeof search>) =>
-    navigate({ to: "/dashboard", search: (prev) => ({ ...prev, ...patch }), replace: true, resetScroll: false });
+    navigate({ to: "/dashboard", search: (prev: typeof search) => ({ ...prev, ...patch }), replace: true, resetScroll: false });
 
   const setActiveTab = (v: string) => setSearch({ tab: v });
   const setFilter = (v: FilterKey) => setSearch({ filter: v });
@@ -348,6 +548,16 @@ function Dashboard() {
       qc.invalidateQueries({ queryKey: ["recommendations"] });
       qc.invalidateQueries({ queryKey: ["actions"] });
       setDeleteId(null);
+    },
+  });
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: deleteMultipleRecommendations,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["recommendations"] });
+      qc.invalidateQueries({ queryKey: ["actions"] });
+      setSelectedIds(new Set());
+      setBulkDeleteOpen(false);
     },
   });
 
@@ -482,12 +692,10 @@ function Dashboard() {
       }
     }
     return (
-      <Button
+      <button
         onClick={handleExport}
         disabled={loading || !ids.length}
-        variant="outline"
-        size="sm"
-        className="h-11 gap-2 rounded-xl border-border/40 bg-secondary/30 px-4 text-sm font-semibold text-foreground hover:bg-secondary/60 transition-all"
+        className="inline-flex h-11 items-center gap-2 rounded-xl border border-border/40 bg-secondary/30 px-4 text-sm font-semibold text-foreground hover:bg-slate-100 hover:border-border transition-all disabled:opacity-40 disabled:cursor-not-allowed"
       >
         {loading ? (
           <Loader2 className="size-4 animate-spin" />
@@ -495,7 +703,7 @@ function Dashboard() {
           <FileDown className="size-4" />
         )}
         Export Excel {ids.length > 0 && <span className="text-muted-foreground">({ids.length})</span>}
-      </Button>
+      </button>
     );
   }
 
@@ -720,22 +928,57 @@ function Dashboard() {
                   />
                 </div>
 
-                {/* Record count badge + Export */}
+                {/* Record count badge + Export + Bulk Delete */}
                 <div className="ml-auto flex items-center gap-3">
                   <div className="hidden rounded-xl border border-border/40 bg-secondary/20 px-4 py-2 font-display text-sm text-muted-foreground sm:flex items-center gap-2">
                     <span className="font-bold text-foreground">{tableRows.length}</span>
                     <span className="opacity-40">/</span>
                     <span>{recommendations.length} records</span>
                   </div>
-                  <ExportButton ids={sortedRows.map((r) => r.id)} />
+                  {selectedIds.size > 0 && (
+                    <>
+                      <button
+                        onClick={() => setSelectedIds(new Set())}
+                        className="inline-flex h-11 items-center gap-2 rounded-xl border border-border/40 bg-secondary/30 px-4 text-sm font-semibold text-muted-foreground hover:bg-slate-100 hover:text-foreground hover:border-border transition-all"
+                      >
+                        <X className="size-4" />
+                        Clear selection
+                      </button>
+                      <button
+                        onClick={() => setBulkDeleteOpen(true)}
+                        className="inline-flex h-11 items-center gap-2 rounded-xl border border-destructive/40 bg-destructive/5 px-4 text-sm font-semibold text-destructive hover:bg-destructive/20 hover:border-destructive/60 transition-all"
+                      >
+                        <Trash2 className="size-4" />
+                        Delete {selectedIds.size} selected
+                      </button>
+                    </>
+                  )}
+                  <ExportButton ids={selectedIds.size > 0 ? [...selectedIds] : sortedRows.map((r) => r.id)} />
                 </div>
               </div>
 
               {/* Table container */}
               <div className="overflow-hidden rounded-3xl border border-border/40 bg-white shadow-2xl shadow-black/[0.02]">
                 {/* Column headers */}
-                <div className="grid grid-cols-[8px_100px_1.5fr_1.4fr_1fr_1fr_130px_120px_48px] items-center gap-4 border-b border-border/30 bg-secondary/30 px-6 py-5 text-[11px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70">
-                  <div />
+                <div className="grid grid-cols-[40px_8px_100px_1.5fr_1.4fr_1fr_1fr_130px_160px_48px] items-center gap-4 border-b border-border/30 bg-secondary/30 px-6 py-5 text-[11px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70">
+                  <div className="flex items-center justify-center">
+                    <Checkbox
+                      checked={pagedRows.length > 0 && pagedRows.every((r) => selectedIds.has(r.id))}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setSelectedIds((prev) => new Set([...prev, ...pagedRows.map((r) => r.id)]));
+                        } else {
+                          setSelectedIds((prev) => {
+                            const next = new Set(prev);
+                            pagedRows.forEach((r) => next.delete(r.id));
+                            return next;
+                          });
+                        }
+                      }}
+                      aria-label="Select all on page"
+                    />
+                  </div>
+                  <div /> {/* accent-bar spacer */}
                   <button onClick={() => toggleSort("priority")} className="flex items-center gap-1 hover:text-foreground transition-colors">Priority <SortIcon col="priority" /></button>
                   <button onClick={() => toggleSort("customer")} className="flex items-center gap-1 hover:text-foreground transition-colors">Customer <SortIcon col="customer" /></button>
                   <div>Equipment</div>
@@ -814,10 +1057,13 @@ function Dashboard() {
                     const overdue = r.status === "Expired / overdue";
                     const dueSoon = r.monthsToRecert !== null && r.monthsToRecert >= 0 && r.monthsToRecert <= 3;
                     const ocr = r.extractionStatus !== "OK";
+                    // Row needs urgent human review: extraction failed AND admin hasn't reviewed yet
+                    const needsReviewAsap = !r.humanReviewed && (ocr || !r.customer || r.priority === "Manual review");
                     const accentColor =
-                      r.priority === "High" ? "bg-destructive"
-                        : r.priority === "Low" ? "bg-emerald-500"
-                          : "bg-muted-foreground/30";
+                      needsReviewAsap ? "bg-amber-500"
+                        : r.priority === "High" ? "bg-destructive"
+                          : r.priority === "Low" ? "bg-emerald-500"
+                            : "bg-muted-foreground/30";
                     return (
                       <div
                         key={r.id}
@@ -825,43 +1071,160 @@ function Dashboard() {
                         role="button"
                         tabIndex={0}
                         onKeyDown={(e) => e.key === "Enter" && openDetail(r)}
-                        className="group grid w-full grid-cols-[8px_100px_1.5fr_1.4fr_1fr_1fr_130px_120px_48px] items-center gap-4 px-6 py-5 text-left transition-all duration-200 hover:bg-secondary/20 cursor-pointer"
+                        className={`group grid w-full grid-cols-[40px_8px_100px_1.5fr_1.4fr_1fr_1fr_130px_160px_48px] items-start gap-4 px-6 py-5 text-left transition-all duration-200 hover:bg-secondary/20 cursor-pointer ${selectedIds.has(r.id) ? "bg-primary/5" : ""} ${needsReviewAsap ? "bg-amber-50/60 hover:bg-amber-50/80 ring-1 ring-inset ring-amber-400/30" : ""}`}
                       >
+                        {/* Checkbox */}
+                        <div className="flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+                          <Checkbox
+                            checked={selectedIds.has(r.id)}
+                            onCheckedChange={(checked) => {
+                              setSelectedIds((prev) => {
+                                const next = new Set(prev);
+                                if (checked) next.add(r.id); else next.delete(r.id);
+                                return next;
+                              });
+                            }}
+                            aria-label={`Select record ${r.id}`}
+                          />
+                        </div>
                         {/* Priority accent bar */}
                         <div className={`h-10 w-1.5 rounded-full ${accentColor} opacity-60 transition-all group-hover:opacity-100 group-hover:scale-y-110`} />
 
                         {/* Priority chip */}
                         <div>
-                          <PriorityChip priority={r.priority} />
+                          {r.humanReviewed && r.priority === "Manual review"
+                            ? <span className="font-mono text-xs text-muted-foreground/40">—</span>
+                            : <PriorityChip priority={r.priority} />}
                         </div>
 
                         {/* Customer */}
                         <div className="min-w-0">
-                          <div className="truncate text-sm font-bold text-[#0D1117] transition-colors group-hover:text-primary">
-                            {r.customer ?? <span className="italic font-normal text-muted-foreground">Pending OCR</span>}
-                          </div>
-                          <div className="mt-1 truncate text-[11px] font-semibold text-muted-foreground/50 uppercase tracking-wide flex items-center gap-1.5">
-                            {r.location && <MapPin className="size-3" />}
-                            {r.location ? r.location : (r.jobOrProject ?? r.sourceFile)}
-                          </div>
+                          {needsReviewAsap && !r.customer ? (
+                            <div className="flex flex-col gap-0.5">
+                              <div className="flex items-center gap-1.5">
+                                <AlertTriangle className="size-3.5 text-amber-600 shrink-0" />
+                                <span className="text-sm font-bold text-amber-700 truncate">Human review needed ASAP</span>
+                              </div>
+                              <div className="font-mono text-[10px] font-semibold text-amber-600/70 uppercase tracking-wide truncate pl-5">
+                                {r.sourceFile}
+                              </div>
+                            </div>
+                          ) : (
+                            <>
+                              <div className="truncate text-sm font-bold text-[#0D1117] transition-colors group-hover:text-primary">
+                                {r.customer ?? <span className="italic font-normal text-muted-foreground">Pending OCR</span>}
+                              </div>
+                              <div className="mt-1 truncate text-[11px] font-semibold text-muted-foreground/50 uppercase tracking-wide flex items-center gap-1.5">
+                                {r.location && <MapPin className="size-3" />}
+                                {r.location ? r.location : (r.jobOrProject ?? r.sourceFile)}
+                              </div>
+                            </>
+                          )}
                         </div>
 
                         {/* Equipment + parts */}
-                        <div className="min-w-0">
-                          <div className="truncate text-sm text-foreground">
-                            {r.equipment ?? <span className="text-muted-foreground">—</span>}
-                          </div>
-                          <div className="mt-1 flex flex-wrap gap-1">
-                            {r.partNumbers.slice(0, 2).map((p) => (
-                              <span key={p.number} className="rounded-md border border-border/50 bg-secondary/40 px-1.5 py-px font-mono text-[9px] text-muted-foreground">
-                                {p.number}
-                              </span>
-                            ))}
-                            {r.partNumbers.length > 2 && (
-                              <span className="font-mono text-[9px] text-muted-foreground/50">+{r.partNumbers.length - 2}</span>
-                            )}
-                          </div>
-                        </div>
+                        {(() => {
+                          const { groups, unattributedSerials } = groupSerialsByPart(r);
+                          const shownGroups = groups.slice(0, 2);
+                          const hiddenCount = groups.length - shownGroups.length;
+                          const totalSerials = r.serials.length;
+
+                          return (
+                            <div className="min-w-0 space-y-1">
+                              {/* 1. Equipment name — highlighted. When missing, promote first part number as title */}
+                              <div className="truncate text-sm font-semibold text-foreground" title={r.equipment ?? groups[0]?.part.number ?? undefined}>
+                                {r.equipment ?? (
+                                  groups.length > 0 ? (
+                                    <span className="font-mono">
+                                      {groups[0].part.number}
+                                      {groups.length > 1 && <span className="font-sans text-muted-foreground/70">, ...</span>}
+                                    </span>
+                                  ) : (
+                                    <span className="text-[10px] font-normal text-muted-foreground/50">—</span>
+                                  )
+                                )}
+                              </div>
+
+                              {/* 2. Qty × Part No rows */}
+                              {groups.length > 0 && (
+                                <div className="flex flex-wrap items-center gap-1">
+                                  {shownGroups.map((g) => (
+                                    <span
+                                      key={g.part.number}
+                                      className="inline-flex items-center gap-1 rounded-md border border-border/50 bg-secondary/40 px-1.5 py-px font-mono text-[9px] text-foreground"
+                                    >
+                                      {g.part.qty != null && (
+                                        <span className="font-bold text-primary">{g.part.qty}×</span>
+                                      )}
+                                      {g.part.number}
+                                      {g.serials.length > 0 && (
+                                        <span className="ml-0.5 text-muted-foreground/60">#{g.serials[0]}{g.serials.length > 1 ? ` +${g.serials.length - 1}` : ""}</span>
+                                      )}
+                                    </span>
+                                  ))}
+                                  {hiddenCount > 0 && (
+                                    <HoverCard openDelay={120} closeDelay={80}>
+                                      <HoverCardTrigger asChild>
+                                        <button
+                                          type="button"
+                                          onClick={(e) => e.stopPropagation()}
+                                          className="rounded-md border border-dashed border-border/60 bg-secondary/30 px-1.5 py-px font-mono text-[9px] text-muted-foreground hover:bg-secondary/60 hover:text-foreground transition-colors"
+                                        >
+                                          +{hiddenCount} more
+                                        </button>
+                                      </HoverCardTrigger>
+                                      <HoverCardContent
+                                        side="right"
+                                        align="start"
+                                        className="w-80 p-3"
+                                        onClick={(e) => e.stopPropagation()}
+                                      >
+                                        <div className="mb-2 flex items-center justify-between text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                                          <span>{r.equipment ?? "Parts & Serials"}</span>
+                                          <span>{groups.length} parts · {totalSerials} serials</span>
+                                        </div>
+                                        <div className="max-h-72 space-y-1.5 overflow-y-auto pr-1">
+                                          {groups.map((g) => (
+                                            <div key={g.part.number} className="rounded border border-border/60 bg-muted/30 p-2">
+                                              {/* Qty × Part No — Description */}
+                                              <div className="flex flex-wrap items-baseline gap-x-1.5">
+                                                {g.part.qty != null && (
+                                                  <span className="rounded bg-primary/15 px-1 py-0.5 font-mono text-[9px] font-bold text-primary">{g.part.qty}×</span>
+                                                )}
+                                                <span className="font-mono text-xs font-semibold text-foreground">{g.part.number}</span>
+                                                {g.part.description && (
+                                                  <span className="text-[10px] text-muted-foreground">— {g.part.description}</span>
+                                                )}
+                                              </div>
+                                              {/* Serials */}
+                                              {g.serials.length > 0 && (
+                                                <div className="mt-1 flex flex-wrap gap-0.5">
+                                                  {g.serials.map((s) => (
+                                                    <span key={s} className="rounded border border-border/40 bg-background px-1 py-px font-mono text-[9px] text-muted-foreground">{s}</span>
+                                                  ))}
+                                                </div>
+                                              )}
+                                            </div>
+                                          ))}
+                                          {unattributedSerials.length > 0 && (
+                                            <div className="rounded border border-dashed border-border/50 bg-muted/20 p-2">
+                                              <div className="mb-1 text-[9px] font-semibold uppercase text-muted-foreground">Other serials</div>
+                                              <div className="flex flex-wrap gap-0.5">
+                                                {unattributedSerials.map((s) => (
+                                                  <span key={s} className="rounded border border-border/40 bg-background px-1 py-px font-mono text-[9px] text-muted-foreground">{s}</span>
+                                                ))}
+                                              </div>
+                                            </div>
+                                          )}
+                                        </div>
+                                      </HoverCardContent>
+                                    </HoverCard>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
 
                         {/* SO / PO */}
                         <div className="font-mono text-xs">
@@ -884,8 +1247,28 @@ function Dashboard() {
 
                         {/* Status */}
                         <div className="flex flex-col gap-1">
-                          <StatusBadge status={r.status} />
                           {(() => {
+                            let displayStatus = r.status;
+                            if (r.humanReviewed && r.status === "Manual review") {
+                              if (r.monthsToRecert !== null) {
+                                // Recompute from stored monthsToRecert
+                                if (r.monthsToRecert < 0) displayStatus = "Expired / overdue";
+                                else if (r.monthsToRecert <= 12) displayStatus = "Due within 12 months";
+                                else if (r.monthsToRecert <= 24) displayStatus = "Mid-cycle service opportunity";
+                                else displayStatus = "Within lifecycle";
+                              } else {
+                                // No date — show null
+                                return <span className="font-mono text-xs text-muted-foreground/40">—</span>;
+                              }
+                            }
+                            return <StatusBadge status={displayStatus} />;
+                          })()}
+                          {r.humanReviewed ? (
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              <span className="size-1.5 rounded-full bg-sky-500" />
+                              <span className="font-mono text-[9px] font-bold text-sky-600 uppercase tracking-wide">Reviewed by human</span>
+                            </div>
+                          ) : (() => {
                             const score = getConfidenceScore(r);
                             const color = score >= 80 ? "text-emerald-500" : score >= 60 ? "text-orange-400" : "text-red-400";
                             const bar   = score >= 80 ? "bg-emerald-500"   : score >= 60 ? "bg-orange-400"   : "bg-red-400";
@@ -1046,7 +1429,7 @@ function Dashboard() {
       <RecommendationDetail rec={selected} open={open} onOpenChange={setOpen} linkedAction={selected ? getLinkedAction(selected.id) : null} />
 
 
-      {/* Delete confirmation */}
+      {/* Single delete confirmation */}
       <Dialog open={deleteId !== null} onOpenChange={(v) => { if (!v && !deleteMutation.isPending) setDeleteId(null); }}>
         <DialogContent className="sm:max-w-sm bg-surface border-border">
           <DialogHeader>
@@ -1066,6 +1449,38 @@ function Dashboard() {
               onClick={() => deleteId && deleteMutation.mutate(deleteId)}
             >
               {deleteMutation.isPending ? <><Loader2 className="mr-2 size-3.5 animate-spin" />Deleting…</> : "Delete"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk delete confirmation */}
+      <Dialog open={bulkDeleteOpen} onOpenChange={(v) => { if (!v && !bulkDeleteMutation.isPending) setBulkDeleteOpen(false); }}>
+        <DialogContent className="sm:max-w-sm bg-surface border-border">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <Trash2 className="size-4" /> Delete {selectedIds.size} record{selectedIds.size !== 1 ? "s" : ""}?
+            </DialogTitle>
+            <DialogDescription>
+              This will permanently remove{" "}
+              <strong>{selectedIds.size} recommendation{selectedIds.size !== 1 ? "s" : ""}</strong>{" "}
+              and all their linked actions from the database. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          {bulkDeleteMutation.isError && (
+            <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2.5 text-xs text-destructive">
+              {(bulkDeleteMutation.error as Error).message}
+            </div>
+          )}
+          <div className="mt-4 flex justify-end gap-3">
+            <Button variant="outline" size="sm" onClick={() => setBulkDeleteOpen(false)} disabled={bulkDeleteMutation.isPending}>Cancel</Button>
+            <Button
+              size="sm"
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90 font-bold"
+              disabled={bulkDeleteMutation.isPending}
+              onClick={() => bulkDeleteMutation.mutate([...selectedIds])}
+            >
+              {bulkDeleteMutation.isPending ? <><Loader2 className="mr-2 size-3.5 animate-spin" />Deleting…</> : `Delete ${selectedIds.size}`}
             </Button>
           </div>
         </DialogContent>

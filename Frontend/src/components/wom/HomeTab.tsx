@@ -1131,6 +1131,11 @@ export function HomeTab({
   const noData = !isLoading && !isError && recommendations.length === 0;
   const isEmpty = !isLoading && !isError && filtered.length === 0 && recommendations.length > 0;
 
+  // Records that need human review and haven't been reviewed yet
+  const needsHumanReview = recommendations.filter(
+    (r) => r.priority === "Manual review" && !r.humanReviewed
+  );
+
   return (
     <div className="mx-auto w-full max-w-[1600px] px-6 py-8">
 
@@ -1194,6 +1199,42 @@ export function HomeTab({
           <p className="text-sm text-muted-foreground">
             Ingest PDF / DOC / DOCX certificates of conformance to populate the dashboard.
           </p>
+        </div>
+      )}
+
+      {!isLoading && !isError && needsHumanReview.length > 0 && (
+        <div className="mb-8 rounded-2xl border border-amber-400/40 bg-amber-50/80 p-5 shadow-sm ring-1 ring-amber-400/20 backdrop-blur-sm">
+          <div className="flex items-start gap-4">
+            <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-amber-400/20 text-amber-600">
+              <AlertTriangle className="size-6" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold text-amber-900 leading-snug">
+                Human review is needed
+              </p>
+              <p className="mt-1 text-xs text-amber-700 leading-relaxed">
+                {needsHumanReview.length === 1
+                  ? "1 certificate could not be fully extracted by AI and requires manual inspection before it can be trusted."
+                  : `${needsHumanReview.length} certificates could not be fully extracted by AI and require manual inspection before they can be trusted.`}
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {needsHumanReview.slice(0, 5).map((r) => (
+                  <span
+                    key={r.id}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/60 bg-amber-100 px-3 py-1 font-mono text-[10px] font-bold text-amber-800"
+                  >
+                    <AlertTriangle className="size-2.5 shrink-0" />
+                    {r.sourceFile}
+                  </span>
+                ))}
+                {needsHumanReview.length > 5 && (
+                  <span className="inline-flex items-center rounded-full border border-amber-300/40 bg-amber-100/60 px-3 py-1 font-mono text-[10px] font-bold text-amber-700">
+                    +{needsHumanReview.length - 5} more
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

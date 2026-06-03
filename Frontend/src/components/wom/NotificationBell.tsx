@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Bell, CheckCircle2, XCircle, Trash2 } from "lucide-react";
+import { Bell, CheckCircle2, XCircle, Trash2, AlertTriangle } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useNotifications } from "@/lib/notifications-context";
 import { cn } from "@/lib/utils";
@@ -96,11 +96,13 @@ export function NotificationBell() {
                 <div
                   className={cn(
                     "mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full",
-                    n.status === "success" ? "bg-emerald-500/10" : "bg-red-500/10"
+                    n.status === "success" ? "bg-emerald-500/10" : n.status === "warning" ? "bg-amber-500/10" : "bg-red-500/10"
                   )}
                 >
                   {n.status === "success" ? (
                     <CheckCircle2 className="size-4 text-emerald-500" />
+                  ) : n.status === "warning" ? (
+                    <AlertTriangle className="size-4 text-amber-500" />
                   ) : (
                     <XCircle className="size-4 text-red-500" />
                   )}
@@ -111,7 +113,7 @@ export function NotificationBell() {
                   <p
                     className={cn(
                       "text-xs mt-0.5 leading-snug",
-                      n.status === "success" ? "text-emerald-600" : "text-red-500"
+                      n.status === "success" ? "text-emerald-600" : n.status === "warning" ? "text-amber-600" : "text-red-500"
                     )}
                   >
                     {n.message}

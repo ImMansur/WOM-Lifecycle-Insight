@@ -11,6 +11,21 @@ class PartEntry(BaseModel):
     qty: Optional[int] = None
 
 
+class LineItem(BaseModel):
+    """One row from the CoC's equipment table.
+
+    A CoC typically lists one or more line items. Each row groups the
+    description, the part number, the quantity, and the serial(s) that
+    belong specifically to that part — the relationship that is lost when
+    you flatten everything into separate ``partNumbers`` and ``serials``
+    arrays.
+    """
+    description: Optional[str] = None
+    partNumber: Optional[str] = None
+    qty: Optional[int] = None
+    serials: List[str] = Field(default_factory=list)
+
+
 class Recommendation(BaseModel):
     id: str
     sourceFile: str
@@ -23,6 +38,11 @@ class Recommendation(BaseModel):
     jobOrProject: Optional[str] = None
     location: Optional[str] = None
     equipment: Optional[str] = None
+    # Structured line items (description ↔ partNumber ↔ qty ↔ serials).
+    # This is the source of truth for the part/serial relationship.
+    lineItems: List[LineItem] = Field(default_factory=list)
+    # Legacy flat arrays — kept populated (derived from lineItems) so older
+    # screens (Equipment tab, filters, etc.) continue to work unchanged.
     partNumbers: List[PartEntry] = Field(default_factory=list)
     serials: List[str] = Field(default_factory=list)
     certificateDate: Optional[str] = None
@@ -39,6 +59,7 @@ class Recommendation(BaseModel):
     notes: Optional[str] = None
     textPreview: Optional[str] = None
     blobUrl: Optional[str] = None
+    humanReviewed: bool = False
 
 
 class Summary(BaseModel):
@@ -58,7 +79,28 @@ class RecommendationsResponse(BaseModel):
 class IngestResponse(BaseModel):
     processed: int
     recommendations: List[Recommendation]
+    pendingDuplicates: List["PendingDuplicate"] = Field(default_factory=list)
     errors: List[str] = Field(default_factory=list)
+
+
+class PendingDuplicate(BaseModel):
+    """A newly-extracted record whose business key already exists in the store.
+    The new record is **not** saved until the admin confirms."""
+    existingId: str
+    existingFile: str
+    existingCustomer: Optional[str] = None
+    existingSalesOrder: Optional[str] = None
+    existingCertificateDate: Optional[str] = None
+    newRecommendation: Recommendation  # full extracted rec, NOT yet persisted
+
+
+class ConfirmDuplicateItem(BaseModel):
+    existingId: str
+    newRecommendation: Recommendation
+
+
+class ConfirmDuplicatesRequest(BaseModel):
+    updates: List[ConfirmDuplicateItem] = Field(default_factory=list)
 
 
 class PatchRecommendation(BaseModel):
@@ -72,6 +114,7 @@ class PatchRecommendation(BaseModel):
     serials: Optional[List[str]] = None
     partNumbers: Optional[List[PartEntry]] = None
     notes: Optional[str] = None
+    priority: Optional[Literal["High", "Low", "Manual review"]] = None
 
 
 # ─── Action Center ────────────────────────────────────────────────────────────

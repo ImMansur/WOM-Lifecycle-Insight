@@ -67,10 +67,16 @@ class RecommendationStore:
             return []
         try:
             docs = self.db.collection("recommendations").stream()
-            return [Recommendation(**doc.to_dict()) for doc in docs]
         except Exception as e:
             logging.error(f"Firestore error in all(): {e}")
             return []
+        results: List[Recommendation] = []
+        for doc in docs:
+            try:
+                results.append(Recommendation(**doc.to_dict()))
+            except Exception as e:
+                logging.warning(f"Skipping invalid recommendation doc {doc.id}: {e}")
+        return results
 
     def add(self, rec: Recommendation) -> None:
         if not self.ready:

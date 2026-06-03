@@ -3,13 +3,16 @@ from __future__ import annotations
 
 import os
 from datetime import date, datetime, timedelta, timezone
+from typing import List
 from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 from models import Recommendation, RecommendationsResponse, Summary, PatchRecommendation
 from store import recommendation_store, action_store
+from services.openai_service import _compute_lifecycle_fields
 
 router = APIRouter(prefix="/api", tags=["recommendations"])
 
@@ -51,6 +54,31 @@ async def delete_recommendation(rec_id: str):
             action_store.remove(action.id)
 
 
+class BulkDeleteRequest(BaseModel):
+    ids: List[str]
+
+
+@router.post(
+    "/recommendations/bulk-delete",
+    status_code=status.HTTP_200_OK,
+)
+async def bulk_delete_recommendations(body: BulkDeleteRequest):
+    """Remove multiple recommendations by ID. Returns counts of deleted and not-found IDs."""
+    deleted: list[str] = []
+    not_found: list[str] = []
+    for rec_id in body.ids:
+        removed = recommendation_store.remove(rec_id)
+        if removed:
+            deleted.append(rec_id)
+            actions = action_store.all()
+            for action in actions:
+                if action.linkedRecId == rec_id:
+                    action_store.remove(action.id)
+        else:
+            not_found.append(rec_id)
+    return {"deleted": len(deleted), "not_found": not_found}
+
+
 @router.patch("/recommendations/{rec_id}", response_model=Recommendation)
 async def patch_recommendation(rec_id: str, patch: PatchRecommendation):
     """Manually correct extracted fields. Marks record as reviewed (OK / High confidence)."""
@@ -65,6 +93,22 @@ async def patch_recommendation(rec_id: str, patch: PatchRecommendation):
     # Mark as manually reviewed once admin saves corrections
     fields["extractionStatus"] = "OK"
     fields["confidence"] = "High"
+    fields["humanReviewed"] = True
+
+    # Recompute lifecycle if a certificateDate is being patched (or was already on the record)
+    cert_date = fields.get("certificateDate")
+    if not cert_date:
+        # Fall back to the existing record's certificateDate
+        existing = recommendation_store.get(rec_id)
+        if existing:
+            cert_date = existing.certificateDate
+    if cert_date:
+        lifecycle = _compute_lifecycle_fields(cert_date)
+        # Only update lifecycle fields when we get a real status (not Manual review)
+        if lifecycle.get("status") != "Manual review":
+            for key in ("recertificationDue", "ageMonths", "monthsToRecert", "status", "priority", "lifecycleDate"):
+                if lifecycle.get(key) is not None:
+                    fields[key] = lifecycle[key]
 
     success = recommendation_store.update(rec_id, fields)
     if not success:

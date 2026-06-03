@@ -13,6 +13,7 @@ import {
 } from "@/lib/api";
 import type { Action, ActionStatus, ActionComment } from "@/lib/api";
 import type { Recommendation } from "@/lib/wom-data";
+import { groupSerialsByPart } from "@/lib/wom-data";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
@@ -999,52 +1000,67 @@ function TicketSheet({
             <h3 className="mb-4 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-primary">
               <Package className="size-3.5" /> Parts &amp; Serials
             </h3>
-            <div className="space-y-4">
-              <div>
-                <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                  Part Numbers ({rec.partNumbers.length})
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {rec.partNumbers.length === 0 && (
-                    <span className="text-sm text-muted-foreground">—</span>
-                  )}
-                  <TooltipProvider delayDuration={100}>
-                    {rec.partNumbers.map((p) => (
-                      <Tooltip key={p.number}>
-                        <TooltipTrigger asChild>
-                          <span className="cursor-default rounded border border-border bg-muted/50 px-2 py-1 font-mono text-xs text-foreground">
-                            {p.qty != null && (
-                              <span className="mr-1.5 rounded bg-primary/20 px-1 text-[10px] font-semibold text-primary">{p.qty}×</span>
-                            )}
-                            {p.number}
-                          </span>
-                        </TooltipTrigger>
-                        {p.description && (
-                          <TooltipContent side="top" className="max-w-xs text-xs">
-                            {p.description}
-                          </TooltipContent>
+            {(() => {
+              const { groups, unattributedSerials } = groupSerialsByPart(rec);
+              const totalParts = groups.length;
+              const totalSerials = rec.serials.length;
+              if (totalParts === 0 && totalSerials === 0) {
+                return <span className="text-sm text-muted-foreground">—</span>;
+              }
+              return (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                    <span>{totalParts} part{totalParts !== 1 ? "s" : ""}</span>
+                    <span className="text-border">·</span>
+                    <span>{totalSerials} serial{totalSerials !== 1 ? "s" : ""}</span>
+                  </div>
+
+                  {/* One card per part: header (qty × number — description),
+                      followed by the serials that belong to it. */}
+                  <div className="space-y-2">
+                    {groups.map((g) => (
+                      <div key={g.part.number} className="rounded-lg border border-border bg-muted/30 p-3">
+                        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                          {g.part.qty != null && (
+                            <span className="rounded bg-primary/15 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-primary">
+                              {g.part.qty}×
+                            </span>
+                          )}
+                          <span className="font-mono text-sm font-semibold text-foreground">{g.part.number}</span>
+                          {g.part.description && (
+                            <span className="text-xs text-muted-foreground">— {g.part.description}</span>
+                          )}
+                        </div>
+                        {g.serials.length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            {g.serials.map((s) => (
+                              <span key={s} className="rounded border border-border/60 bg-background px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                                <Hash className="mr-0.5 inline size-2.5" />{s}
+                              </span>
+                            ))}
+                          </div>
                         )}
-                      </Tooltip>
+                      </div>
                     ))}
-                  </TooltipProvider>
-                </div>
-              </div>
-              <div>
-                <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                  Serial / Lot ({rec.serials.length})
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {rec.serials.length === 0 && (
-                    <span className="text-sm text-muted-foreground">—</span>
+                  </div>
+
+                  {unattributedSerials.length > 0 && (
+                    <div className="rounded-lg border border-dashed border-border bg-muted/20 p-3">
+                      <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                        Other serials ({unattributedSerials.length})
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {unattributedSerials.map((s) => (
+                          <span key={s} className="rounded border border-border/60 bg-background px-2 py-1 font-mono text-xs text-muted-foreground">
+                            <Hash className="mr-1 inline size-3" />{s}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
                   )}
-                  {rec.serials.map((s) => (
-                    <span key={s} className="rounded border border-border/60 bg-muted/50 px-2 py-1 font-mono text-xs text-muted-foreground">
-                      <Hash className="mr-1 inline size-3" />{s}
-                    </span>
-                  ))}
                 </div>
-              </div>
-            </div>
+              );
+            })()}
           </section>
 
           {/* AI Recommendation */}

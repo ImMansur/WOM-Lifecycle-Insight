@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { StatusBadge, PriorityChip } from "./StatusBadge";
 import type { Recommendation } from "@/lib/wom-data";
+import { groupSerialsByPart } from "@/lib/wom-data";
 import { updateRecommendation, suggestNextSteps, fetchDocumentUrl } from "@/lib/api";
 import type { RecommendationPatch, Action } from "@/lib/api";
 import {
@@ -215,28 +216,53 @@ function EmailDraftDialog({
                   <span className="text-sm font-mono text-foreground break-all">{value}</span>
                 </div>
               ))}
-              {rec.partNumbers.length > 0 && (
-                <div className="grid grid-cols-[160px_1fr] gap-4 px-4 py-2.5">
-                  <span className="text-xs font-semibold text-muted-foreground shrink-0 pt-0.5">Part Number(s)</span>
-                  <div className="flex flex-wrap gap-1.5">
-                    {rec.partNumbers.map((p) => (
-                      <span key={p.number} className="rounded bg-background border border-border px-2 py-0.5 font-mono text-xs text-foreground">
-                        {p.number}{p.description ? ` – ${p.description}` : ""}
-                      </span>
+              {(() => {
+                const { groups, unattributedSerials } = groupSerialsByPart(rec);
+                if (groups.length === 0 && unattributedSerials.length === 0) return null;
+                return (
+                  <div className="px-4 py-3 space-y-2">
+                    <div className="text-xs font-semibold text-muted-foreground">
+                      Parts &amp; Serials ({groups.length} part{groups.length !== 1 ? "s" : ""} · {rec.serials.length} serial{rec.serials.length !== 1 ? "s" : ""})
+                    </div>
+                    {groups.map((g) => (
+                      <div key={g.part.number} className="rounded-lg border border-border bg-background p-2.5">
+                        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                          {g.part.qty != null && (
+                            <span className="rounded bg-primary/15 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-primary">
+                              {g.part.qty}×
+                            </span>
+                          )}
+                          <span className="font-mono text-sm font-semibold text-foreground">{g.part.number}</span>
+                          {g.part.description && (
+                            <span className="text-xs text-muted-foreground">— {g.part.description}</span>
+                          )}
+                        </div>
+                        {g.serials.length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            {g.serials.map((s) => (
+                              <span key={s} className="rounded bg-accent/10 border border-accent/30 px-1.5 py-0.5 font-mono text-[10px] text-accent">
+                                {s}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     ))}
+                    {unattributedSerials.length > 0 && (
+                      <div className="rounded-lg border border-dashed border-border bg-muted/20 p-2.5">
+                        <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                          Other serials ({unattributedSerials.length})
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {unattributedSerials.map((s) => (
+                            <span key={s} className="rounded bg-accent/10 border border-accent/30 px-2 py-0.5 font-mono text-xs text-accent">{s}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                </div>
-              )}
-              {rec.serials.length > 0 && (
-                <div className="grid grid-cols-[160px_1fr] gap-4 px-4 py-2.5">
-                  <span className="text-xs font-semibold text-muted-foreground shrink-0 pt-0.5">Serial / Lot</span>
-                  <div className="flex flex-wrap gap-1.5">
-                    {rec.serials.map((s) => (
-                      <span key={s} className="rounded bg-accent/10 border border-accent/30 px-2 py-0.5 font-mono text-xs text-accent">{s}</span>
-                    ))}
-                  </div>
-                </div>
-              )}
+                );
+              })()}
             </div>
           </div>
 
@@ -433,6 +459,7 @@ export function RecommendationDetail({
       certificateDate: rec!.certificateDate ?? "",
       serials: rec!.serials,
       notes: rec!.notes ?? "",
+      priority: rec!.priority as "High" | "Low" | "Manual review",
     });
     setEditing(true);
   }
@@ -450,6 +477,8 @@ export function RecommendationDetail({
     for (const [k, v] of Object.entries(d)) {
       if (k === "serials") {
         patch.serials = (v as string[]).filter(Boolean);
+      } else if (k === "priority") {
+        if (v) patch.priority = v as "High" | "Low" | "Manual review";
       } else if (typeof v === "string" && v.trim() !== "") {
         (patch as Record<string, unknown>)[k] = v.trim();
       }
@@ -577,7 +606,7 @@ export function RecommendationDetail({
                 </button>
               </div>
               <SheetTitle className="font-display text-xl leading-tight text-foreground">
-                {rec.equipment ?? rec.sourceFile}
+                {rec.customer ?? rec.sourceFile}
               </SheetTitle>
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <FileText className="size-3.5" />
@@ -623,6 +652,28 @@ export function RecommendationDetail({
                   {field("purchaseOrder", "Purchase Order")}
                   {field("jobOrProject", "Job / Project")}
                   {field("location", "Location")}
+                </div>
+                {/* Priority */}
+                <div className="mt-4 space-y-1">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Priority</span>
+                  <div className="flex gap-2 mt-1">
+                    {(["High", "Low"] as const).map((p) => (
+                      <button
+                        key={p}
+                        type="button"
+                        onClick={() => setDraft((prev) => ({ ...prev, priority: p }))}
+                        className={`rounded-full border px-4 py-1.5 text-[11px] font-bold uppercase tracking-wide transition-all ${
+                          draft.priority === p
+                            ? p === "High" ? "bg-primary/10 border-primary/40 text-primary"
+                              : p === "Low" ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-600"
+                              : "bg-muted border-border text-muted-foreground"
+                            : "border-border/40 text-muted-foreground/50 hover:border-border hover:text-muted-foreground"
+                        }`}
+                      >
+                        {p}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </section>
 
@@ -753,56 +804,61 @@ export function RecommendationDetail({
               <h3 className="mb-4 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-amber">
                 <Package className="size-3.5" /> Parts & Serials
               </h3>
-              <div className="space-y-4">
-                <div>
-                  <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                    Part Numbers ({rec.partNumbers.length})
-                  </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {rec.partNumbers.length === 0 && (
-                      <span className="text-sm text-muted-foreground">—</span>
-                    )}
-                    <TooltipProvider delayDuration={100}>
-                      {rec.partNumbers.map((p) => (
-                        <Tooltip key={p.number}>
-                          <TooltipTrigger asChild>
-                            <span className="cursor-default rounded border border-border bg-surface-elevated px-2 py-1 font-mono text-xs text-foreground">
-                              {p.qty != null && (
-                                <span className="mr-1.5 rounded bg-amber/20 px-1 text-[10px] font-semibold text-amber">{p.qty}×</span>
-                              )}
-                              {p.number}
-                            </span>
-                          </TooltipTrigger>
-                          {p.description && (
-                            <TooltipContent side="top" className="max-w-xs text-xs">
-                              {p.description}
-                            </TooltipContent>
+              {(() => {
+                const { groups, unattributedSerials } = groupSerialsByPart(rec);
+                if (groups.length === 0 && unattributedSerials.length === 0) {
+                  return <span className="text-sm text-muted-foreground">—</span>;
+                }
+                return (
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                      <span>{groups.length} part{groups.length !== 1 ? "s" : ""}</span>
+                      <span className="text-border">·</span>
+                      <span>{rec.serials.length} serial{rec.serials.length !== 1 ? "s" : ""}</span>
+                    </div>
+                    <div className="space-y-2">
+                      {groups.map((g) => (
+                        <div key={g.part.number} className="rounded-lg border border-border bg-surface-elevated p-3">
+                          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                            {g.part.qty != null && (
+                              <span className="rounded bg-amber/20 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-amber">
+                                {g.part.qty}×
+                              </span>
+                            )}
+                            <span className="font-mono text-sm font-semibold text-foreground">{g.part.number}</span>
+                            {g.part.description && (
+                              <span className="text-xs text-muted-foreground">— {g.part.description}</span>
+                            )}
+                          </div>
+                          {g.serials.length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-1">
+                              {g.serials.map((s) => (
+                                <span key={s} className="rounded border border-accent/30 bg-accent/10 px-1.5 py-0.5 font-mono text-[10px] text-accent">
+                                  <Hash className="mr-0.5 inline size-2.5" />{s}
+                                </span>
+                              ))}
+                            </div>
                           )}
-                        </Tooltip>
+                        </div>
                       ))}
-                    </TooltipProvider>
-                  </div>
-                </div>
-                <div>
-                  <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                    Serial / Lot ({rec.serials.length})
-                  </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {rec.serials.length === 0 && (
-                      <span className="text-sm text-muted-foreground">—</span>
+                    </div>
+                    {unattributedSerials.length > 0 && (
+                      <div className="rounded-lg border border-dashed border-border bg-surface-elevated/40 p-3">
+                        <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                          Other serials ({unattributedSerials.length})
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {unattributedSerials.map((s) => (
+                            <span key={s} className="rounded border border-accent/30 bg-accent/10 px-2 py-1 font-mono text-xs text-accent">
+                              <Hash className="mr-1 inline size-3" />{s}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
                     )}
-                    {rec.serials.map((s) => (
-                      <span
-                        key={s}
-                        className="rounded border border-accent/30 bg-accent/10 px-2 py-1 font-mono text-xs text-accent"
-                      >
-                        <Hash className="mr-1 inline size-3" />
-                        {s}
-                      </span>
-                    ))}
                   </div>
-                </div>
-              </div>
+                );
+              })()}
             </section>
 
             <Separator className="bg-border" />
