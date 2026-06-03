@@ -27,6 +27,9 @@ async def extract_text(file_bytes: bytes, filename: str) -> tuple[str, bool]:
     from azure.ai.documentintelligence.aio import DocumentIntelligenceClient
     from azure.core.credentials import AzureKeyCredential
 
+    # Let KeyError propagate — missing env vars are a configuration error, not
+    # a recoverable extraction failure.  The caller (ingest pipeline) will
+    # catch this and surface it as a proper error message to the user.
     endpoint = os.environ["DOCUMENT_INTELLIGENCE_ENDPOINT"]
     key = os.environ["DOCUMENT_INTELLIGENCE_KEY"]
     model_id = os.environ.get("DI_MODEL_ID", "prebuilt-layout")
@@ -56,10 +59,15 @@ async def extract_text(file_bytes: bytes, filename: str) -> tuple[str, bool]:
 
     except asyncio.TimeoutError:
         logger.error("DI timed out after %.0fs for %s", _DI_TIMEOUT_SECONDS, filename)
-        return "", True
+        raise RuntimeError(
+            f"Document Intelligence timed out after {_DI_TIMEOUT_SECONDS:.0f}s — "
+            "set DI_TIMEOUT_SECONDS env var or check your Azure DI resource."
+        )
     except Exception as exc:
         logger.warning("DI extraction failed for %s: %s", filename, exc)
-        return "", True
+        # Re-raise API/credential errors so the caller can surface them.
+        # Only swallow the error for a genuine "no text" response.
+        raise RuntimeError(f"Document Intelligence extraction failed: {exc}") from exc
 
 
 def extract_text_from_docx(file_bytes: bytes) -> str:
