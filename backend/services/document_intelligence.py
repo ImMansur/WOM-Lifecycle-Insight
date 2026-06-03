@@ -9,7 +9,10 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 # Cap any single DI call so a stuck poller can't hold the request forever.
-_DI_TIMEOUT_SECONDS = float(os.environ.get("DI_TIMEOUT_SECONDS", "600"))
+# vercel.json sets maxDuration=300 for the function. Default to 280s so DI
+# times out with a clean error before Vercel hard-kills it silently.
+# Override with DI_TIMEOUT_SECONDS env var (e.g. "8" for Hobby plan).
+_DI_TIMEOUT_SECONDS = float(os.environ.get("DI_TIMEOUT_SECONDS", "280"))
 
 
 async def extract_text(file_bytes: bytes, filename: str) -> tuple[str, bool]:
@@ -33,6 +36,8 @@ async def extract_text(file_bytes: bytes, filename: str) -> tuple[str, bool]:
     endpoint = os.environ["DOCUMENT_INTELLIGENCE_ENDPOINT"]
     key = os.environ["DOCUMENT_INTELLIGENCE_KEY"]
     model_id = os.environ.get("DI_MODEL_ID", "prebuilt-layout")
+    # Hard cap at 300 pages per file — configurable via DI_MAX_PAGES env var.
+    max_pages = int(os.environ.get("DI_MAX_PAGES", "300"))
 
     try:
         async with DocumentIntelligenceClient(
@@ -43,6 +48,7 @@ async def extract_text(file_bytes: bytes, filename: str) -> tuple[str, bool]:
                 model_id=model_id,
                 body=file_bytes,
                 content_type="application/octet-stream",
+                pages=f"1-{max_pages}",
             )
             result = await asyncio.wait_for(poller.result(), timeout=_DI_TIMEOUT_SECONDS)
 
