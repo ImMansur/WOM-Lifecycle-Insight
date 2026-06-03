@@ -1,11 +1,12 @@
 """Ingest router — accepts file uploads and processes them through the pipeline."""
 from __future__ import annotations
 
+import base64
 import logging
 from pathlib import Path
 from typing import List
 
-from fastapi import APIRouter, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
 
 from models import (
     ConfirmDuplicatesRequest,
@@ -15,7 +16,7 @@ from models import (
 )
 from services.document_intelligence import extract_text, extract_text_from_docx
 from services.openai_service import process_document
-from services.blob_storage import upload_file, generate_upload_sas, download_blob
+from services.blob_storage import upload_file, generate_upload_sas, download_blob, stage_block, commit_blocks
 from store import recommendation_store
 
 logger = logging.getLogger(__name__)
@@ -229,6 +230,77 @@ async def _process_one_file(
     except Exception as exc:
         logger.exception("Unexpected error processing %s", filename)
         return None, None, f"{filename}: processing failed — {exc}"
+
+
+# ---------------------------------------------------------------------------
+# Chunked upload endpoint (used on Vercel to bypass the 4.5 MB body limit)
+# ---------------------------------------------------------------------------
+
+@router.post("/ingest-chunk", status_code=status.HTTP_200_OK)
+async def ingest_chunk(
+    file: UploadFile = File(...),
+    filename: str = Form(...),
+    chunk_index: int = Form(...),
+    total_chunks: int = Form(...),
+):
+    """
+    Accept one chunk of a larger file upload.
+
+    The browser slices the file into pieces that each fit under Vercel's 4.5 MB
+    function body limit and POSTs them here.  Each chunk is staged as an Azure
+    Blob block (server-side — no browser-to-Azure CORS required).  When the
+    final chunk arrives the blocks are committed and the assembled file is run
+    through the full extraction + AI pipeline.
+    """
+    ext = Path(filename).suffix.lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(status_code=400, detail=f"Unsupported file type '{ext}'.")
+
+    chunk_bytes = await file.read()
+    if len(chunk_bytes) == 0:
+        raise HTTPException(status_code=400, detail="Empty chunk received.")
+
+    # Block IDs must be base64-encoded and all have the same length.
+    block_id = base64.b64encode(f"{chunk_index:08d}".encode()).decode()
+
+    ok = stage_block(filename, block_id, chunk_bytes)
+    if not ok:
+        raise HTTPException(
+            status_code=503,
+            detail="Blob storage unavailable — check AZURE_STORAGE_CONNECTION_STRING.",
+        )
+
+    # Intermediate chunk: acknowledge and wait for more.
+    if chunk_index < total_chunks - 1:
+        return {"staged": True, "chunk_index": chunk_index, "total_chunks": total_chunks}
+
+    # Final chunk: commit all staged blocks into one blob then process.
+    all_block_ids = [base64.b64encode(f"{i:08d}".encode()).decode() for i in range(total_chunks)]
+    blob_url = commit_blocks(filename, all_block_ids)
+
+    file_bytes = download_blob(filename)
+    if file_bytes is None:
+        raise HTTPException(status_code=503, detail="Could not download assembled file from blob storage.")
+
+    all_existing = recommendation_store.all()
+    existing_by_key: dict = {}
+    for r in all_existing:
+        cust = (r.customer or "").strip().lower()
+        so = (r.salesOrder or "").strip().lower()
+        cert = (r.certificateDate or "").strip()
+        if cust and so and cert:
+            k = (cust, so, cert)
+            if k not in existing_by_key:
+                existing_by_key[k] = r
+
+    rec, dup, err = await _process_one_file(file_bytes, filename, blob_url, existing_by_key)
+
+    return IngestResponse(
+        processed=1 if rec else 0,
+        recommendations=[rec] if rec else [],
+        pendingDuplicates=[dup] if dup else [],
+        errors=[err] if err else [],
+    )
 
 
 # ---------------------------------------------------------------------------

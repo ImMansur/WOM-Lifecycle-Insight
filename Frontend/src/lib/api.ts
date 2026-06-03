@@ -59,6 +59,45 @@ export async function ingestFiles(files: File[]): Promise<IngestResponse> {
   return res.json();
 }
 
+// 3.5 MB — safely under Vercel's 4.5 MB function body limit
+const CHUNK_SIZE = 3.5 * 1024 * 1024;
+
+/**
+ * Upload a single file in chunks through the Vercel backend.
+ * Each chunk is staged as an Azure Blob block server-side (no browser→Azure
+ * CORS required). On the final chunk the backend assembles and processes the
+ * file, returning the normal IngestResponse.
+ */
+export async function uploadFileInChunks(file: File): Promise<IngestResponse> {
+  const totalChunks = Math.max(1, Math.ceil(file.size / CHUNK_SIZE));
+
+  for (let i = 0; i < totalChunks; i++) {
+    const start = i * CHUNK_SIZE;
+    const chunk = file.slice(start, start + CHUNK_SIZE);
+
+    const form = new FormData();
+    form.append("file", chunk, file.name);
+    form.append("filename", file.name);
+    form.append("chunk_index", String(i));
+    form.append("total_chunks", String(totalChunks));
+
+    const res = await fetch(`${BASE}/api/ingest-chunk`, {
+      method: "POST",
+      body: form,
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Ingest failed (${res.status}): ${text}`);
+    }
+
+    if (i === totalChunks - 1) {
+      return res.json() as Promise<IngestResponse>;
+    }
+  }
+
+  throw new Error("No response received from final chunk.");
+}
+
 export interface UploadSasResponse {
   url: string;
   blobName: string;

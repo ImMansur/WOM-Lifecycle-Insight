@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useState, useRef, useEffect } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ingestFiles, confirmIngestUpdates, getUploadSas, ingestFromBlob, type IngestResponse, type PendingDuplicate } from "@/lib/api";
+import { ingestFiles, uploadFileInChunks, confirmIngestUpdates, type IngestResponse, type PendingDuplicate } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -99,26 +99,27 @@ function UploadPage() {
         window.location.hostname === "127.0.0.1";
 
       if (!isLocal) {
-        const blobNames: string[] = [];
+        // Vercel path: split each file into 3.5 MB chunks and POST them
+        // individually. The backend stages each chunk as an Azure Blob block
+        // (server-side — no browser→Azure CORS required) and processes the
+        // assembled file on the final chunk.
+        const combined: IngestResponse = {
+          processed: 0,
+          recommendations: [],
+          pendingDuplicates: [],
+          errors: [],
+        };
         for (const file of filesToUpload) {
-          const { url, blobName } = await getUploadSas(file.name);
-          const putRes = await fetch(url, {
-            method: "PUT",
-            headers: {
-              "x-ms-blob-type": "BlockBlob",
-              "Content-Type": file.type || "application/octet-stream",
-            },
-            body: file,
-          });
-          if (!putRes.ok) {
-            throw new Error(`Azure upload failed for ${file.name}: ${putRes.status} ${putRes.statusText}`);
-          }
-          blobNames.push(blobName);
+          const result = await uploadFileInChunks(file);
+          combined.processed += result.processed;
+          combined.recommendations.push(...result.recommendations);
+          combined.pendingDuplicates.push(...result.pendingDuplicates);
+          combined.errors.push(...result.errors);
         }
-        return ingestFromBlob(blobNames);
+        return combined;
       }
 
-      // Local dev: POST directly to the backend.
+      // Local dev: POST all files directly to the backend (no size limit).
       return ingestFiles(filesToUpload);
     },
     onSuccess: (data) => {

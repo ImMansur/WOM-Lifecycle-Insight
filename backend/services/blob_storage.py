@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import os
 from datetime import datetime, timedelta, timezone
+from urllib.parse import quote
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +117,7 @@ def generate_upload_sas(filename: str) -> str | None:
             expiry=datetime.now(timezone.utc) + timedelta(minutes=15),
         )
 
-        url = f"https://{account_name}.blob.core.windows.net/ocr/{filename}?{sas_token}"
+        url = f"https://{account_name}.blob.core.windows.net/ocr/{quote(filename, safe='')}?{sas_token}"
         logger.info("Generated SAS upload URL for '%s'", filename)
         return url
     except Exception as exc:
@@ -142,4 +143,45 @@ def download_blob(filename: str) -> bytes | None:
         return file_bytes
     except Exception as exc:
         logger.error("Blob download failed for '%s': %s", filename, exc)
+        return None
+
+
+def stage_block(filename: str, block_id: str, chunk_bytes: bytes) -> bool:
+    """
+    Stage a single block for a block blob upload.
+
+    *block_id* must be a base64-encoded string.  All blocks for a given blob
+    must have the same encoded length.  Use ``commit_blocks`` once all blocks
+    have been staged to assemble the final blob.
+    """
+    client = _get_container_client()
+    if client is None:
+        return False
+    try:
+        blob = client.get_blob_client(filename)
+        blob.stage_block(block_id, chunk_bytes, length=len(chunk_bytes))
+        logger.info("Staged block '%s' for '%s' (%d bytes)", block_id, filename, len(chunk_bytes))
+        return True
+    except Exception as exc:
+        logger.error("Failed to stage block for '%s': %s", filename, exc)
+        return False
+
+
+def commit_blocks(filename: str, block_ids: list[str]) -> str | None:
+    """
+    Commit a previously staged list of blocks into the final blob.
+
+    Returns the blob URL on success, or None on failure.
+    """
+    client = _get_container_client()
+    if client is None:
+        return None
+    try:
+        from azure.storage.blob import BlobBlock
+        blob = client.get_blob_client(filename)
+        blob.commit_block_list([BlobBlock(block_id=bid) for bid in block_ids])
+        logger.info("Committed %d blocks → '%s'", len(block_ids), filename)
+        return blob.url
+    except Exception as exc:
+        logger.error("Failed to commit blocks for '%s': %s", filename, exc)
         return None
