@@ -93,33 +93,39 @@ function UploadPage() {
     mutationFn: async (filesToUpload: File[]): Promise<IngestResponse> => {
       // On Vercel, POST bodies > 4.5 MB are rejected before reaching our code.
       // Use the SAS flow: browser → Azure Blob directly → backend processes from blob.
-      // Falls back to direct multipart upload if SAS is unavailable (local dev
-      // without Azure Storage configured returns 503 from /api/upload-sas).
+      // Falls back to direct multipart upload if the SAS endpoint is unavailable
+      // (local dev without Azure Storage, or network error reaching the endpoint).
+
+      // Step 1: try to get a SAS URL for the first file to check availability.
+      let sasSupported = true;
       try {
-        const blobNames: string[] = [];
-        for (const file of filesToUpload) {
-          const { url, blobName } = await getUploadSas(file.name);
-          const putRes = await fetch(url, {
-            method: "PUT",
-            headers: {
-              "x-ms-blob-type": "BlockBlob",
-              "Content-Type": file.type || "application/octet-stream",
-            },
-            body: file,
-          });
-          if (!putRes.ok) {
-            throw new Error(`Direct upload failed for ${file.name}: ${putRes.status} ${putRes.statusText}`);
-          }
-          blobNames.push(blobName);
-        }
-        return ingestFromBlob(blobNames);
-      } catch (err) {
-        // If SAS endpoint is not configured (503), fall back to direct upload.
-        if (err instanceof Error && err.message.includes("503")) {
-          return ingestFiles(filesToUpload);
-        }
-        throw err;
+        await getUploadSas(filesToUpload[0].name + "__check__");
+      } catch {
+        sasSupported = false;
       }
+
+      if (!sasSupported) {
+        return ingestFiles(filesToUpload);
+      }
+
+      // Step 2: upload each file directly to Azure Blob via SAS, then ingest.
+      const blobNames: string[] = [];
+      for (const file of filesToUpload) {
+        const { url, blobName } = await getUploadSas(file.name);
+        const putRes = await fetch(url, {
+          method: "PUT",
+          headers: {
+            "x-ms-blob-type": "BlockBlob",
+            "Content-Type": file.type || "application/octet-stream",
+          },
+          body: file,
+        });
+        if (!putRes.ok) {
+          throw new Error(`Direct upload failed for ${file.name}: ${putRes.status} ${putRes.statusText}`);
+        }
+        blobNames.push(blobName);
+      }
+      return ingestFromBlob(blobNames);
     },
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ["recommendations"] });
