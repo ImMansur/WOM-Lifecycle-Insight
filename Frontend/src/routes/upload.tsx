@@ -91,41 +91,30 @@ function UploadPage() {
 
   const mutation = useMutation({
     mutationFn: async (filesToUpload: File[]): Promise<IngestResponse> => {
-      // On Vercel, POST bodies > 4.5 MB are rejected before reaching our code.
-      // Use the SAS flow: browser → Azure Blob directly → backend processes from blob.
-      // Falls back to direct multipart upload if the SAS endpoint is unavailable
-      // (local dev without Azure Storage, or network error reaching the endpoint).
-
-      // Step 1: try to get a SAS URL for the first file to check availability.
-      let sasSupported = true;
-      try {
-        await getUploadSas(filesToUpload[0].name + "__check__");
-      } catch {
-        sasSupported = false;
-      }
-
-      if (!sasSupported) {
-        return ingestFiles(filesToUpload);
-      }
-
-      // Step 2: upload each file directly to Azure Blob via SAS, then ingest.
-      const blobNames: string[] = [];
-      for (const file of filesToUpload) {
-        const { url, blobName } = await getUploadSas(file.name);
-        const putRes = await fetch(url, {
-          method: "PUT",
-          headers: {
-            "x-ms-blob-type": "BlockBlob",
-            "Content-Type": file.type || "application/octet-stream",
-          },
-          body: file,
-        });
-        if (!putRes.ok) {
-          throw new Error(`Direct upload failed for ${file.name}: ${putRes.status} ${putRes.statusText}`);
+      if (import.meta.env.VITE_USE_SAS_UPLOAD === "true") {
+        // Vercel path: browser uploads directly to Azure Blob via SAS,
+        // bypassing Vercel's 4.5 MB function body limit entirely.
+        const blobNames: string[] = [];
+        for (const file of filesToUpload) {
+          const { url, blobName } = await getUploadSas(file.name);
+          const putRes = await fetch(url, {
+            method: "PUT",
+            headers: {
+              "x-ms-blob-type": "BlockBlob",
+              "Content-Type": file.type || "application/octet-stream",
+            },
+            body: file,
+          });
+          if (!putRes.ok) {
+            throw new Error(`Azure upload failed for ${file.name}: ${putRes.status} ${putRes.statusText}`);
+          }
+          blobNames.push(blobName);
         }
-        blobNames.push(blobName);
+        return ingestFromBlob(blobNames);
       }
-      return ingestFromBlob(blobNames);
+
+      // Local dev path: POST files directly to the backend (no size limit locally).
+      return ingestFiles(filesToUpload);
     },
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ["recommendations"] });
