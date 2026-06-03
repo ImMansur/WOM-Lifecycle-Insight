@@ -59,6 +59,41 @@ export async function ingestFiles(files: File[]): Promise<IngestResponse> {
   return res.json();
 }
 
+export interface UploadSasResponse {
+  url: string;
+  blobName: string;
+}
+
+/**
+ * Get a short-lived Azure Blob SAS URL so the browser can PUT the file
+ * directly to blob storage, bypassing Vercel's 4.5 MB function body limit.
+ */
+export async function getUploadSas(filename: string): Promise<UploadSasResponse> {
+  const res = await fetch(`${BASE}/api/upload-sas?filename=${encodeURIComponent(filename)}`);
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Failed to get upload URL (${res.status}): ${text}`);
+  }
+  return res.json();
+}
+
+/**
+ * Tell the backend to process files that are already in Azure Blob Storage.
+ * Call this after uploading files via SAS URLs.
+ */
+export async function ingestFromBlob(blobNames: string[]): Promise<IngestResponse> {
+  const res = await fetch(`${BASE}/api/ingest-from-blob`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(blobNames),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Ingest failed (${res.status}): ${text}`);
+  }
+  return res.json();
+}
+
 export async function confirmIngestUpdates(
   updates: ConfirmDuplicateItem[],
 ): Promise<IngestResponse> {

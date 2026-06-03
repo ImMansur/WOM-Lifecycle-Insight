@@ -3,8 +3,19 @@ from __future__ import annotations
 
 import logging
 import os
+from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_connection_string(conn_str: str) -> dict[str, str]:
+    """Parse an Azure Storage connection string into a key→value dict."""
+    result: dict[str, str] = {}
+    for part in conn_str.split(";"):
+        if "=" in part:
+            k, v = part.split("=", 1)
+            result[k] = v
+    return result
 
 # Lazily initialised so the app starts even if the env var is missing.
 _client = None
@@ -70,4 +81,65 @@ def upload_file(file_bytes: bytes, filename: str) -> str | None:
         return url
     except Exception as exc:
         logger.error("Blob upload failed for '%s': %s", filename, exc)
+        return None
+
+
+def generate_upload_sas(filename: str) -> str | None:
+    """
+    Generate a short-lived (15 min) SAS URL that allows the browser to PUT a
+    file directly into the 'ocr' container — bypassing the Vercel 4.5 MB body
+    limit entirely.
+
+    Returns the full SAS URL on success, or None if blob storage is not
+    configured or the token cannot be generated.
+    """
+    conn_str = os.environ.get("AZURE_STORAGE_CONNECTION_STRING")
+    if not conn_str:
+        return None
+
+    try:
+        from azure.storage.blob import generate_blob_sas, BlobSasPermissions
+
+        params = _parse_connection_string(conn_str)
+        account_name = params.get("AccountName")
+        account_key = params.get("AccountKey")
+        if not account_name or not account_key:
+            logger.error("Cannot generate SAS: AccountName/AccountKey missing from connection string.")
+            return None
+
+        sas_token = generate_blob_sas(
+            account_name=account_name,
+            container_name="ocr",
+            blob_name=filename,
+            account_key=account_key,
+            permission=BlobSasPermissions(write=True, create=True),
+            expiry=datetime.now(timezone.utc) + timedelta(minutes=15),
+        )
+
+        url = f"https://{account_name}.blob.core.windows.net/ocr/{filename}?{sas_token}"
+        logger.info("Generated SAS upload URL for '%s'", filename)
+        return url
+    except Exception as exc:
+        logger.error("Failed to generate SAS URL for '%s': %s", filename, exc)
+        return None
+
+
+def download_blob(filename: str) -> bytes | None:
+    """
+    Download *filename* from the 'ocr' container and return its raw bytes.
+
+    Returns None if blob storage is not configured or the download fails.
+    """
+    client = _get_container_client()
+    if client is None:
+        return None
+
+    try:
+        blob = client.get_blob_client(filename)
+        data = blob.download_blob()
+        file_bytes = data.readall()
+        logger.info("Downloaded '%s' from blob storage (%d bytes)", filename, len(file_bytes))
+        return file_bytes
+    except Exception as exc:
+        logger.error("Blob download failed for '%s': %s", filename, exc)
         return None

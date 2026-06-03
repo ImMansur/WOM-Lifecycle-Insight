@@ -15,7 +15,7 @@ from models import (
 )
 from services.document_intelligence import extract_text, extract_text_from_docx
 from services.openai_service import process_document
-from services.blob_storage import upload_file
+from services.blob_storage import upload_file, generate_upload_sas, download_blob
 from store import recommendation_store
 
 logger = logging.getLogger(__name__)
@@ -146,6 +146,158 @@ async def ingest_files(files: List[UploadFile] = File(...)):
         except Exception as exc:
             logger.exception("Unexpected error processing %s", filename)
             errors.append(f"{filename}: processing failed — {exc}")
+
+    return IngestResponse(
+        processed=len(results),
+        recommendations=results,
+        pendingDuplicates=pending,
+        errors=errors,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Helpers shared by both ingest endpoints
+# ---------------------------------------------------------------------------
+
+async def _process_one_file(
+    file_bytes: bytes,
+    filename: str,
+    blob_url: str | None,
+    existing_by_key: dict,
+) -> tuple[Recommendation | None, PendingDuplicate | None, str | None]:
+    """
+    Run the full extraction→AI→dedup pipeline for a single file.
+
+    Returns (recommendation, pending_duplicate, error_message).  Exactly one
+    of the three will be non-None.
+    """
+    ext = Path(filename).suffix.lower()
+    source_type = ext.lstrip(".").upper()
+
+    try:
+        converted_docx_name: str | None = None
+        if ext in {".doc", ".docx"}:
+            docx_text = extract_text_from_docx(file_bytes)
+            if len(docx_text.strip()) >= 100:
+                extracted_text = docx_text
+                is_ocr_needed = False
+                if ext == ".doc":
+                    converted_docx_name = Path(filename).stem + ".docx"
+            else:
+                extracted_text, is_ocr_needed = await extract_text(file_bytes, filename)
+        else:
+            extracted_text, is_ocr_needed = await extract_text(file_bytes, filename)
+
+        recommendation = await process_document(
+            file_bytes=file_bytes,
+            filename=filename,
+            extracted_text=extracted_text,
+            is_ocr_needed=is_ocr_needed,
+            source_type=source_type,
+        )
+        recommendation.convertedDocx = converted_docx_name
+        recommendation.blobUrl = blob_url
+
+        def _bk(rec: Recommendation):
+            cust = (rec.customer or "").strip().lower()
+            so = (rec.salesOrder or "").strip().lower()
+            cert = (rec.certificateDate or "").strip()
+            if not cust or not so or not cert:
+                return None
+            return (cust, so, cert)
+
+        key = _bk(recommendation)
+        existing = recommendation_store.get(recommendation.id)
+        if existing is None and key:
+            existing = existing_by_key.get(key)
+
+        if existing is not None:
+            return None, PendingDuplicate(
+                existingId=existing.id,
+                existingFile=existing.sourceFile,
+                existingCustomer=existing.customer,
+                existingSalesOrder=existing.salesOrder,
+                existingCertificateDate=existing.certificateDate,
+                newRecommendation=recommendation,
+            ), None
+
+        if key:
+            existing_by_key[key] = recommendation
+        recommendation_store.add(recommendation)
+        return recommendation, None, None
+
+    except Exception as exc:
+        logger.exception("Unexpected error processing %s", filename)
+        return None, None, f"{filename}: processing failed — {exc}"
+
+
+# ---------------------------------------------------------------------------
+# SAS upload URL endpoint
+# ---------------------------------------------------------------------------
+
+@router.get("/upload-sas")
+async def get_upload_sas(filename: str):
+    """
+    Return a short-lived Azure Blob SAS URL that allows the browser to PUT the
+    file directly into blob storage — bypassing the Vercel function body limit.
+    """
+    sas_url = generate_upload_sas(filename)
+    if not sas_url:
+        raise HTTPException(
+            status_code=503,
+            detail="Blob storage SAS generation not available. Check AZURE_STORAGE_CONNECTION_STRING.",
+        )
+    return {"url": sas_url, "blobName": filename}
+
+
+# ---------------------------------------------------------------------------
+# Ingest-from-blob endpoint (used by the frontend after direct SAS upload)
+# ---------------------------------------------------------------------------
+
+@router.post("/ingest-from-blob", response_model=IngestResponse, status_code=status.HTTP_200_OK)
+async def ingest_from_blob(blob_names: list[str]):
+    """
+    Process files that have already been uploaded directly to Azure Blob
+    Storage (via SAS URL).  Accepts a JSON array of blob names.
+    """
+    if not blob_names:
+        raise HTTPException(status_code=400, detail="No blob names provided.")
+
+    results: list[Recommendation] = []
+    errors: list[str] = []
+    pending: list[PendingDuplicate] = []
+
+    all_existing = recommendation_store.all()
+    existing_by_key: dict = {}
+    for r in all_existing:
+        cust = (r.customer or "").strip().lower()
+        so = (r.salesOrder or "").strip().lower()
+        cert = (r.certificateDate or "").strip()
+        if cust and so and cert:
+            k = (cust, so, cert)
+            if k not in existing_by_key:
+                existing_by_key[k] = r
+
+    for blob_name in blob_names:
+        ext = Path(blob_name).suffix.lower()
+        if ext not in ALLOWED_EXTENSIONS:
+            errors.append(f"{blob_name}: unsupported file type '{ext}'.")
+            continue
+
+        file_bytes = download_blob(blob_name)
+        if file_bytes is None:
+            errors.append(f"{blob_name}: could not download from blob storage.")
+            continue
+
+        blob_url = f"https://blob/{blob_name}"  # approximate; real URL already stored during SAS upload
+
+        rec, dup, err = await _process_one_file(file_bytes, blob_name, blob_url, existing_by_key)
+        if err:
+            errors.append(err)
+        elif dup:
+            pending.append(dup)
+        elif rec:
+            results.append(rec)
 
     return IngestResponse(
         processed=len(results),
