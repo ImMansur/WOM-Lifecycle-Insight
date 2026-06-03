@@ -91,9 +91,14 @@ function UploadPage() {
 
   const mutation = useMutation({
     mutationFn: async (filesToUpload: File[]): Promise<IngestResponse> => {
-      if (import.meta.env.VITE_USE_SAS_UPLOAD === "true") {
-        // Vercel path: browser uploads directly to Azure Blob via SAS,
-        // bypassing Vercel's 4.5 MB function body limit entirely.
+      // On Vercel (not localhost), POST bodies > 4.5 MB are rejected.
+      // Detect at runtime: if we're not on localhost, use the SAS flow so
+      // files go directly from the browser to Azure Blob, bypassing Vercel.
+      const isLocal =
+        window.location.hostname === "localhost" ||
+        window.location.hostname === "127.0.0.1";
+
+      if (!isLocal) {
         const blobNames: string[] = [];
         for (const file of filesToUpload) {
           const { url, blobName } = await getUploadSas(file.name);
@@ -113,7 +118,7 @@ function UploadPage() {
         return ingestFromBlob(blobNames);
       }
 
-      // Local dev path: POST files directly to the backend (no size limit locally).
+      // Local dev: POST directly to the backend.
       return ingestFiles(filesToUpload);
     },
     onSuccess: (data) => {
