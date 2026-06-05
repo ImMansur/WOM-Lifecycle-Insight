@@ -140,6 +140,8 @@ Create a `.env` file in `backend/` using `.env.example` as a reference:
 DOCUMENT_INTELLIGENCE_ENDPOINT=https://<resource>.cognitiveservices.azure.com/
 DOCUMENT_INTELLIGENCE_KEY=<your-key>
 DI_MODEL_ID=prebuilt-layout
+DI_MAX_PAGES=500
+DI_TIMEOUT_SECONDS=280
 
 AZURE_OPENAI_ENDPOINT=https://<resource>.openai.azure.com/
 AZURE_OPENAI_KEY=<your-key>
@@ -220,6 +222,8 @@ Deploy as a **single Vercel project** from the repo root:
 DOCUMENT_INTELLIGENCE_ENDPOINT=
 DOCUMENT_INTELLIGENCE_KEY=
 DI_MODEL_ID=prebuilt-layout
+DI_MAX_PAGES=500
+DI_TIMEOUT_SECONDS=280
 AZURE_OPENAI_ENDPOINT=
 AZURE_OPENAI_KEY=
 AZURE_OPENAI_DEPLOYMENT=gpt-4.1
