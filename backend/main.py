@@ -140,13 +140,19 @@ assets_path = os.path.join(frontend_path, "assets")
 if os.path.exists(assets_path):
     app.mount("/assets", StaticFiles(directory=assets_path), name="assets")
 
-# Catch-all route: Serve React's index.html for everything else
+# Catch-all route: Serve static files or React's index.html
 @app.get("/{catchall:path}")
 async def serve_react_app(catchall: str):
     # Don't intercept requests meant for the API docs
     if catchall in ["docs", "openapi.json"]:
         return {"error": "API route not found"}
         
+    # 1. FIRST: Check if the browser is asking for a specific file (like logo.png or favicon.ico)
+    requested_file = os.path.join(frontend_path, catchall)
+    if os.path.exists(requested_file) and os.path.isfile(requested_file):
+        return FileResponse(requested_file)
+        
+    # 2. FALLBACK: If the file doesn't exist, serve index.html (so React Router can handle the page)
     index_file = os.path.join(frontend_path, "index.html")
     if os.path.exists(index_file):
         return FileResponse(index_file)
