@@ -93,7 +93,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="WOM Lifecycle Insight API",
-    version="1.0.0",
+    version="1.0.1",
     description=(
         "Processes Certificates of Conformance via Azure Document Intelligence "
         "and Azure OpenAI to generate lifecycle recommendations."
