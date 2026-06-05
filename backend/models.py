@@ -103,6 +103,31 @@ class ConfirmDuplicatesRequest(BaseModel):
     updates: List[ConfirmDuplicateItem] = Field(default_factory=list)
 
 
+class JobStatus(str, Enum):
+    pending = "pending"
+    processing = "processing"
+    completed = "completed"
+    failed = "failed"
+    pending_review = "pending_review"
+
+
+class Job(BaseModel):
+    id: str
+    filename: str
+    blobName: str
+    sourceType: Literal["PDF", "DOC", "DOCX"]
+    status: JobStatus = JobStatus.pending
+    createdAt: str
+    updatedAt: str
+    progress: int = 0
+    processed: int = 0
+    recommendationId: Optional[str] = None
+    recommendations: List[Recommendation] = Field(default_factory=list)
+    pendingDuplicates: List[PendingDuplicate] = Field(default_factory=list)
+    errors: List[str] = Field(default_factory=list)
+    message: Optional[str] = None
+
+
 class PatchRecommendation(BaseModel):
     customer: Optional[str] = None
     salesOrder: Optional[str] = None

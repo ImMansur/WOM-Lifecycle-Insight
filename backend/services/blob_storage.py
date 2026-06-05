@@ -44,13 +44,13 @@ def _get_container_client():
     return _client
 
 
-def upload_file(file_bytes: bytes, filename: str) -> str | None:
+def upload_file(file_bytes: bytes, filename: str, blob_name: str | None = None) -> str | None:
     """
     Upload *file_bytes* to the 'ocr' blob container.
 
     Returns the blob URL on success, or None if the upload is skipped / fails.
-    The blob name is the original filename; existing blobs with the same name
-    are overwritten so re-uploads replace stale copies.
+    The blob name defaults to the original filename; existing blobs with the same
+    name are overwritten so re-uploads replace stale copies.
     """
     client = _get_container_client()
     if client is None:
@@ -68,7 +68,8 @@ def upload_file(file_bytes: bytes, filename: str) -> str | None:
 
     try:
         from azure.storage.blob import ContentSettings
-        blob = client.get_blob_client(filename)
+        target_blob_name = blob_name or filename
+        blob = client.get_blob_client(target_blob_name)
         blob.upload_blob(
             file_bytes,
             overwrite=True,
@@ -78,10 +79,10 @@ def upload_file(file_bytes: bytes, filename: str) -> str | None:
             ),
         )
         url = blob.url
-        logger.info("Uploaded '%s' to blob storage → %s", filename, url)
+        logger.info("Uploaded '%s' to blob storage → %s", target_blob_name, url)
         return url
     except Exception as exc:
-        logger.error("Blob upload failed for '%s': %s", filename, exc)
+        logger.error("Blob upload failed for '%s': %s", blob_name or filename, exc)
         return None
 
 

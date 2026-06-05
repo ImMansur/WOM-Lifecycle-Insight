@@ -4,11 +4,12 @@ from __future__ import annotations
 import logging
 import os
 import json
+from datetime import datetime, timezone
 from typing import List, Optional
 
 import firebase_admin
 from firebase_admin import credentials, firestore
-from models import Recommendation, Action
+from models import Action, Job, JobStatus, Recommendation
 
 # Initialize Firebase Admin
 def initialize_firestore():
@@ -207,4 +208,90 @@ class ActionStore:
             return False
 
 
+class JobStore:
+    """Firestore-backed store for async ingest jobs."""
+
+    def __init__(self) -> None:
+        self.db = initialize_firestore()
+        self.ready = self.db is not None
+
+    def all(self) -> List[Job]:
+        if not self.ready:
+            return []
+        try:
+            docs = self.db.collection("jobs").stream()
+        except Exception as e:
+            logging.error(f"Firestore error in JobStore.all(): {e}")
+            return []
+        results: List[Job] = []
+        for doc in docs:
+            try:
+                results.append(Job(**doc.to_dict()))
+            except Exception as e:
+                logging.warning(f"Skipping invalid job doc {doc.id}: {e}")
+        return results
+
+    def get(self, job_id: str) -> Job | None:
+        if not self.ready:
+            return None
+        try:
+            doc = self.db.collection("jobs").document(job_id).get()
+            if doc.exists:
+                return Job(**doc.to_dict())
+            return None
+        except Exception as e:
+            logging.error(f"Firestore error in JobStore.get(): {e}")
+            return None
+
+    def add(self, job: Job) -> None:
+        if not self.ready:
+            self.db = initialize_firestore()
+            self.ready = self.db is not None
+            if not self.ready:
+                logging.error("Cannot add job: Firestore still not initialized.")
+                return
+        try:
+            self.db.collection("jobs").document(job.id).set(job.model_dump())
+            logging.info(f"Job {job.id} saved to Firestore.")
+        except Exception as e:
+            logging.error(f"Firestore error in JobStore.add(): {e}")
+
+    def update(self, job_id: str, patch: dict) -> bool:
+        if not self.ready:
+            return False
+        try:
+            doc_ref = self.db.collection("jobs").document(job_id)
+            if doc_ref.get().exists:
+                doc_ref.update(patch)
+                return True
+            return False
+        except Exception as e:
+            logging.error(f"Firestore error in JobStore.update(): {e}")
+            return False
+
+    def claim_pending_job(self) -> Job | None:
+        if not self.ready:
+            return None
+        try:
+            query = self.db.collection("jobs").where("status", "==", JobStatus.pending.value).order_by("createdAt").limit(1)
+            docs = list(query.stream())
+            if not docs:
+                return None
+            doc = docs[0]
+            job_id = doc.id
+            self.db.collection("jobs").document(job_id).update({
+                "status": JobStatus.processing.value,
+                "updatedAt": datetime.now(timezone.utc).isoformat(),
+                "progress": 5,
+            })
+            updated_doc = self.db.collection("jobs").document(job_id).get()
+            if updated_doc.exists:
+                return Job(**updated_doc.to_dict())
+            return Job(**doc.to_dict())
+        except Exception as e:
+            logging.error(f"Firestore error in JobStore.claim_pending_job(): {e}")
+            return None
+
+
 action_store = ActionStore()
+job_store = JobStore()
