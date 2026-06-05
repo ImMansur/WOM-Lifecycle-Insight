@@ -5,8 +5,8 @@ __pycache__/
 *.pyd
 *.egg
 *.egg-info/
-dist/
-build/
+/dist/
+/build/
 .eggs/
 .pytest_cache/
 .mypy_cache/
@@ -21,7 +21,7 @@ env/
 
 # ─── Node / Frontend ────────────────────────────────────────────────────────
 node_modules/
-Frontend/dist/
+# REMOVED Frontend/dist/ from here so Azure can host the website
 Frontend/.output/
 Frontend/.vinxi/
 Frontend/.tanstack/
@@ -53,3 +53,7 @@ Thumbs.db
 .idea/
 *.suo
 *.sw?
+
+# ─── FORCE ALLOW REACT BUILD ─────────────────────────────────────────────────
+!Frontend/dist/
+!Frontend/dist/**
