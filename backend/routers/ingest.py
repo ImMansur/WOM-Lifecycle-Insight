@@ -134,7 +134,10 @@ async def ingest_files(files: List[UploadFile] = File(...)):
         for combo in _get_combination_keys(r):
             existing_by_combo[combo] = r
 
+    # 1. Read files and validate size sequentially to protect memory/limits
     total_batch_size = 0
+    valid_files: list[tuple[bytes, str, str]] = []
+
     for upload in files:
         filename = upload.filename or "unknown"
         ext = Path(filename).suffix.lower()
@@ -151,101 +154,70 @@ async def ingest_files(files: List[UploadFile] = File(...)):
             continue
             
         total_batch_size += original_size
-        compressed_size = original_size
-        pages = 0
-        bypassed = False
 
         if len(file_bytes) == 0:
             errors.append(f"{filename}: empty file.")
             continue
 
-        # Compress PDF if applicable
-        if ext == ".pdf":
-            from services.pdf_compressor import compress_pdf_bytes
-            file_bytes, pages = compress_pdf_bytes(file_bytes, filename)
-            compressed_size = len(file_bytes)
+        valid_files.append((file_bytes, filename, ext))
 
-        # Upload original file to Azure Blob Storage and capture the URL
-        blob_url = upload_file(file_bytes, filename)
+    # 2. Process valid files concurrently (concurrency limit = 5)
+    import asyncio
+    semaphore = asyncio.Semaphore(5)
 
-        source_type = ext.lstrip(".").upper()  # "PDF", "DOC", "DOCX"
+    async def sem_process(file_bytes: bytes, filename: str, ext: str):
+        async with semaphore:
+            return await _extract_and_compress_one_file(file_bytes, filename, None)
 
-        try:
-            # For DOC/DOCX try python-docx first (faster, free); fall back to DI
-            converted_docx_name: str | None = None
-            if ext in {".doc", ".docx"}:
-                docx_text = extract_text_from_docx(file_bytes)
-                if len(docx_text.strip()) >= 100:
-                    extracted_text = docx_text
-                    is_ocr_needed = False
-                    bypassed = True
-                    # Record conversion only for legacy .doc files
-                    if ext == ".doc":
-                        converted_docx_name = Path(filename).stem + ".docx"
-                else:
-                    # Fall through to DI (handles DOCX natively, not DOC)
-                    extracted_text, is_ocr_needed = await extract_text(file_bytes, filename)
-            else:
-                extracted_text, is_ocr_needed = await extract_text(file_bytes, filename)
+    tasks = [sem_process(fb, fn, ext) for fb, fn, ext in valid_files]
+    gather_results = await asyncio.gather(*tasks)
 
-            recommendation = await process_document(
-                file_bytes=file_bytes,
-                filename=filename,
-                extracted_text=extracted_text,
-                is_ocr_needed=is_ocr_needed,
-                source_type=source_type,
-            )
-            recommendation.convertedDocx = converted_docx_name
-            recommendation.blobUrl = blob_url
+    # 3. Post-process recommendations sequentially in memory to prevent duplicate checks race conditions
+    for rec, err in gather_results:
+        if err:
+            errors.append(err)
+            continue
+        if not rec:
+            continue
 
-            if ext == ".pdf":
-                log_optimization_event(filename, original_size, compressed_size, bypass_di=False, pages=pages)
-            elif bypassed:
-                est_pages = max(1, len(extracted_text) // 1500)
-                log_optimization_event(filename, original_size, original_size, bypass_di=True, pages=est_pages)
+        filename = rec.sourceFile
 
-
-            # Duplicate detection — two cases trigger an admin confirmation popup:
-            #   1. Same record ID already exists (re-upload of the *exact same*
-            #      file — content hash matched a previous upload).
-            #   2. Different ID but any 5-field business combination key (customer +
-            #      sales order + certificate date + item + serial) collides with an
-            #      existing record.
-            existing = recommendation_store.get(recommendation.id)
-            new_combos = _get_combination_keys(recommendation)
-            if existing is None and new_combos:
-                for combo in new_combos:
-                    if combo in existing_by_combo:
-                        existing = existing_by_combo[combo]
-                        break
-
-            if existing is not None:
-                pending.append(PendingDuplicate(
-                    existingId=existing.id,
-                    existingFile=existing.sourceFile,
-                    existingCustomer=existing.customer,
-                    existingSalesOrder=existing.salesOrder,
-                    existingCertificateDate=existing.certificateDate,
-                    newRecommendation=recommendation,
-                ))
-                logger.info(
-                    "Pending duplicate: incoming %s collides with existing %s "
-                    "(same %s)",
-                    recommendation.id,
-                    existing.id,
-                    "file" if existing.id == recommendation.id else "business key combinations",
-                )
-                continue
-
-            # Not a duplicate — save now and record the combination keys for in-batch dedupe.
+        # Duplicate detection — two cases trigger an admin confirmation popup:
+        #   1. Same record ID already exists (re-upload of the *exact same*
+        #      file — content hash matched a previous upload).
+        #   2. Different ID but any 5-field business combination key (customer +
+        #      sales order + certificate date + item + serial) collides with an
+        #      existing record.
+        existing = recommendation_store.get(rec.id)
+        new_combos = _get_combination_keys(rec)
+        if existing is None and new_combos:
             for combo in new_combos:
-                existing_by_combo[combo] = recommendation
-            results.append(recommendation)
-            recommendation_store.add(recommendation)
+                if combo in existing_by_combo:
+                    existing = existing_by_combo[combo]
+                    break
 
-        except Exception as exc:
-            logger.exception("Unexpected error processing %s", filename)
-            errors.append(f"{filename}: processing failed — {exc}")
+        if existing is not None:
+            pending.append(PendingDuplicate(
+                existingId=existing.id,
+                existingFile=existing.sourceFile,
+                existingCustomer=existing.customer,
+                existingSalesOrder=existing.salesOrder,
+                existingCertificateDate=existing.certificateDate,
+                newRecommendation=rec,
+            ))
+            logger.info(
+                "Pending duplicate: incoming %s collides with existing %s (same %s)",
+                rec.id,
+                existing.id,
+                "file" if existing.id == rec.id else "business key combinations",
+            )
+            continue
+
+        # Not a duplicate — save now and record the combination keys for in-batch dedupe.
+        for combo in new_combos:
+            existing_by_combo[combo] = rec
+        results.append(rec)
+        recommendation_store.add(rec)
 
     return IngestResponse(
         processed=len(results),
@@ -259,18 +231,12 @@ async def ingest_files(files: List[UploadFile] = File(...)):
 # Helpers shared by both ingest endpoints
 # ---------------------------------------------------------------------------
 
-async def _process_one_file(
+async def _extract_and_compress_one_file(
     file_bytes: bytes,
     filename: str,
     blob_url: str | None,
-    existing_by_combo: dict,
-) -> tuple[Recommendation | None, PendingDuplicate | None, str | None]:
-    """
-    Run the full extraction→AI→dedup pipeline for a single file.
-
-    Returns (recommendation, pending_duplicate, error_message).  Exactly one
-    of the three will be non-None.
-    """
+) -> tuple[Recommendation | None, str | None]:
+    """Runs PDF compression, storage uploading, and text extraction/AI recommendation."""
     ext = Path(filename).suffix.lower()
     source_type = ext.lstrip(".").upper()
 
@@ -324,33 +290,53 @@ async def _process_one_file(
             est_pages = max(1, len(extracted_text) // 1500)
             log_optimization_event(filename, original_size, original_size, bypass_di=True, pages=est_pages)
 
-
-        existing = recommendation_store.get(recommendation.id)
-        new_combos = _get_combination_keys(recommendation)
-        if existing is None and new_combos:
-            for combo in new_combos:
-                if combo in existing_by_combo:
-                    existing = existing_by_combo[combo]
-                    break
-
-        if existing is not None:
-            return None, PendingDuplicate(
-                existingId=existing.id,
-                existingFile=existing.sourceFile,
-                existingCustomer=existing.customer,
-                existingSalesOrder=existing.salesOrder,
-                existingCertificateDate=existing.certificateDate,
-                newRecommendation=recommendation,
-            ), None
-
-        for combo in new_combos:
-            existing_by_combo[combo] = recommendation
-        recommendation_store.add(recommendation)
-        return recommendation, None, None
+        return recommendation, None
 
     except Exception as exc:
         logger.exception("Unexpected error processing %s", filename)
-        return None, None, f"{filename}: processing failed — {exc}"
+        return None, f"{filename}: processing failed — {exc}"
+
+
+async def _process_one_file(
+    file_bytes: bytes,
+    filename: str,
+    blob_url: str | None,
+    existing_by_combo: dict,
+) -> tuple[Recommendation | None, PendingDuplicate | None, str | None]:
+    """
+    Run the full extraction→AI→dedup pipeline for a single file.
+
+    Returns (recommendation, pending_duplicate, error_message).  Exactly one
+    of the three will be non-None.
+    """
+    rec, err = await _extract_and_compress_one_file(file_bytes, filename, blob_url)
+    if err:
+        return None, None, err
+    if not rec:
+        return None, None, f"{filename}: processing failed"
+
+    existing = recommendation_store.get(rec.id)
+    new_combos = _get_combination_keys(rec)
+    if existing is None and new_combos:
+        for combo in new_combos:
+            if combo in existing_by_combo:
+                existing = existing_by_combo[combo]
+                break
+
+    if existing is not None:
+        return None, PendingDuplicate(
+            existingId=existing.id,
+            existingFile=existing.sourceFile,
+            existingCustomer=existing.customer,
+            existingSalesOrder=existing.salesOrder,
+            existingCertificateDate=existing.certificateDate,
+            newRecommendation=rec,
+        ), None
+
+    for combo in new_combos:
+        existing_by_combo[combo] = rec
+    recommendation_store.add(rec)
+    return rec, None, None
 
 
 # ---------------------------------------------------------------------------
@@ -461,7 +447,10 @@ async def ingest_from_blob(blob_names: list[str]):
         for combo in _get_combination_keys(r):
             existing_by_combo[combo] = r
 
+    # 1. Download and validate sizes sequentially
     total_batch_size = 0
+    valid_downloads: list[tuple[bytes, str, str]] = []
+
     for blob_name in blob_names:
         ext = Path(blob_name).suffix.lower()
         if ext not in ALLOWED_EXTENSIONS:
@@ -479,16 +468,51 @@ async def ingest_from_blob(blob_names: list[str]):
             continue
             
         total_batch_size += original_size
+        blob_url = f"https://blob/{blob_name}"  # approximate real URL
+        valid_downloads.append((file_bytes, blob_name, blob_url))
 
-        blob_url = f"https://blob/{blob_name}"  # approximate; real URL already stored during SAS upload
+    # 2. Process concurrently (concurrency limit = 5)
+    import asyncio
+    semaphore = asyncio.Semaphore(5)
 
-        rec, dup, err = await _process_one_file(file_bytes, blob_name, blob_url, existing_by_combo)
+    async def sem_process(file_bytes: bytes, filename: str, blob_url: str):
+        async with semaphore:
+            return await _extract_and_compress_one_file(file_bytes, filename, blob_url)
+
+    tasks = [sem_process(fb, fn, bu) for fb, fn, bu in valid_downloads]
+    gather_results = await asyncio.gather(*tasks)
+
+    # 3. Post-process recommendations sequentially in memory
+    for rec, err in gather_results:
         if err:
             errors.append(err)
-        elif dup:
-            pending.append(dup)
-        elif rec:
-            results.append(rec)
+            continue
+        if not rec:
+            continue
+
+        existing = recommendation_store.get(rec.id)
+        new_combos = _get_combination_keys(rec)
+        if existing is None and new_combos:
+            for combo in new_combos:
+                if combo in existing_by_combo:
+                    existing = existing_by_combo[combo]
+                    break
+
+        if existing is not None:
+            pending.append(PendingDuplicate(
+                existingId=existing.id,
+                existingFile=existing.sourceFile,
+                existingCustomer=existing.customer,
+                existingSalesOrder=existing.salesOrder,
+                existingCertificateDate=existing.certificateDate,
+                newRecommendation=rec,
+            ))
+            continue
+
+        for combo in new_combos:
+            existing_by_combo[combo] = rec
+        results.append(rec)
+        recommendation_store.add(rec)
 
     return IngestResponse(
         processed=len(results),
