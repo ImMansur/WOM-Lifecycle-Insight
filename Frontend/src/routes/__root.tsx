@@ -6,7 +6,7 @@ import {
   useLocation,
   useNavigate,
 } from "@tanstack/react-router";
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useMemo, createContext, useContext } from "react";
 import { useAuth, AuthProvider } from "@/lib/auth-context";
 import { NotificationsProvider } from "@/lib/notifications-context";
 import { NotificationBell } from "@/components/wom/NotificationBell";
@@ -23,6 +23,19 @@ import {
 import { ChevronDown, LogOut, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 import "../styles.css";
+
+interface LayoutContextType {
+  isUploading: boolean;
+  setIsUploading: (val: boolean) => void;
+}
+
+const LayoutContext = createContext<LayoutContextType | undefined>(undefined);
+
+export function useLayout() {
+  const ctx = useContext(LayoutContext);
+  if (!ctx) return { isUploading: false, setIsUploading: () => {} };
+  return ctx;
+}
 
 function NotFoundComponent() {
   return (
@@ -133,6 +146,7 @@ function AppLayout() {
   const search = location.search as any;
   const navigate = useNavigate();
   const [showSignOutLoading, setShowSignOutLoading] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
 
   const navItems = useMemo(() => {
     if (!user) return [];
@@ -216,7 +230,8 @@ function AppLayout() {
   }
 
   return (
-    <div className="min-h-screen bg-background text-foreground selection:bg-primary/20 flex flex-col relative">
+    <LayoutContext.Provider value={{ isUploading, setIsUploading }}>
+      <div className="min-h-screen bg-background text-foreground selection:bg-primary/20 flex flex-col relative">
       {/* Fixed Background Layers */}
       <div className="fixed inset-0 z-0 pointer-events-none">
         <div className="absolute inset-0 bg-mesh" />
@@ -244,66 +259,75 @@ function AppLayout() {
             </div>
           </div>
 
-          <nav
-            ref={containerRef}
-            className="relative mx-auto hidden items-center gap-1 rounded-full bg-secondary/80 p-1.5 backdrop-blur-sm md:flex"
-          >
-            {coords.width > 0 && (
-              <div
-                className="absolute top-1.5 bottom-1.5 bg-primary rounded-full transition-all duration-300 ease-in-out shadow-md shadow-primary/25"
-                style={{
-                  left: `${coords.left}px`,
-                  width: `${coords.width}px`,
-                }}
-              />
-            )}
-
-            {navItems.map((item) => {
-              const active =
-                item.to === location.pathname &&
-                (!item.search || item.search.tab === (search.tab || "Home"));
-
-              return (
-                <Link
-                  key={item.id}
-                  to={item.to}
-                  search={item.search}
-                  onClick={(e) => {
-                    const el = e.currentTarget;
-                    if (containerRef.current) {
-                      const containerRect = containerRef.current.getBoundingClientRect();
-                      const elRect = el.getBoundingClientRect();
-                      setCoords({
-                        left: elRect.left - containerRect.left,
-                        width: elRect.width,
-                      });
-                    }
-                  }}
-                  ref={(el) => {
-                    itemRefs.current[item.id] = el;
-                  }}
-                  className={cn(
-                    "relative z-10 rounded-full px-6 py-2 text-sm font-semibold transition-colors duration-300",
-                    active
-                      ? "text-white"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  {item.label}
-                </Link>
-              );
-            })}
-          </nav>
-
-          <div className="ml-auto flex items-center gap-6">
-            <div className="hidden sm:flex items-center gap-2">
-              <NotificationBell />
+          {isUploading ? (
+            <div className="mx-auto flex items-center gap-2 px-4 py-2 rounded-full border border-primary/20 bg-primary/5 text-primary text-xs font-bold animate-pulse">
+              <span className="size-1.5 rounded-full bg-primary animate-ping" />
+              Document Processing in Progress...
             </div>
-            <div className="h-8 w-px bg-border/50 hidden sm:block" />
-            <div className="flex items-center gap-3">
-              <UserMenu onSignOut={() => setShowSignOutLoading(true)} />
+          ) : (
+            <nav
+              ref={containerRef}
+              className="relative mx-auto hidden items-center gap-1 rounded-full bg-secondary/80 p-1.5 backdrop-blur-sm md:flex"
+            >
+              {coords.width > 0 && (
+                <div
+                  className="absolute top-1.5 bottom-1.5 bg-primary rounded-full transition-all duration-300 ease-in-out shadow-md shadow-primary/25"
+                  style={{
+                    left: `${coords.left}px`,
+                    width: `${coords.width}px`,
+                  }}
+                />
+              )}
+
+              {navItems.map((item) => {
+                const active =
+                  item.to === location.pathname &&
+                  (!item.search || item.search.tab === (search.tab || "Home"));
+
+                return (
+                  <Link
+                    key={item.id}
+                    to={item.to}
+                    search={item.search}
+                    onClick={(e) => {
+                      const el = e.currentTarget;
+                      if (containerRef.current) {
+                        const containerRect = containerRef.current.getBoundingClientRect();
+                        const elRect = el.getBoundingClientRect();
+                        setCoords({
+                          left: elRect.left - containerRect.left,
+                          width: elRect.width,
+                        });
+                      }
+                    }}
+                    ref={(el) => {
+                      itemRefs.current[item.id] = el;
+                    }}
+                    className={cn(
+                      "relative z-10 rounded-full px-6 py-2 text-sm font-semibold transition-colors duration-300",
+                      active
+                        ? "text-white"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </nav>
+          )}
+
+          {!isUploading && (
+            <div className="ml-auto flex items-center gap-6">
+              <div className="hidden sm:flex items-center gap-2">
+                <NotificationBell />
+              </div>
+              <div className="h-8 w-px bg-border/50 hidden sm:block" />
+              <div className="flex items-center gap-3">
+                <UserMenu onSignOut={() => setShowSignOutLoading(true)} />
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </header>
 
@@ -311,6 +335,7 @@ function AppLayout() {
         <Outlet />
       </main>
     </div>
+  </LayoutContext.Provider>
   );
 }
 

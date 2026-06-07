@@ -24,6 +24,7 @@ import {
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useAuth } from "@/lib/auth-context";
 import { useNotifications } from "@/lib/notifications-context";
+import { useLayout } from "./__root";
 
 export const Route = createFileRoute("/upload")({
   component: UploadPage,
@@ -35,6 +36,7 @@ function UploadPage() {
   const navigate = useNavigate();
   const { user, loading } = useAuth();
   const { addNotification } = useNotifications();
+  const { setIsUploading } = useLayout();
   const [dragOver, setDragOver] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
 
@@ -125,6 +127,11 @@ function UploadPage() {
       });
     },
   });
+
+  useEffect(() => {
+    setIsUploading(mutation.isPending);
+    return () => setIsUploading(false);
+  }, [mutation.isPending, setIsUploading]);
 
   const confirmMutation = useMutation({
     mutationFn: confirmIngestUpdates,
