@@ -159,34 +159,6 @@ function LogsPage() {
             Azure Document Intelligence API costs.
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => refetch()}
-            disabled={isLoading || isFetching}
-            className="font-bold gap-2 hover:bg-secondary/60 h-10 rounded-xl text-foreground"
-          >
-            <RefreshCw className={`size-4 ${isFetching ? "animate-spin" : ""}`} />
-            Refresh
-          </Button>
-          {isAdmin && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                if (confirm("Are you sure you want to clear all optimization and savings logs?")) {
-                  clearMutation.mutate();
-                }
-              }}
-              disabled={clearMutation.isPending || logs.length === 0}
-              className="font-bold gap-2 text-destructive hover:bg-destructive/10 hover:text-destructive h-10 rounded-xl"
-            >
-              <Trash2 className="size-4" />
-              Clear Log
-            </Button>
-          )}
-        </div>
       </div>
 
       {/* Grid for Summary statistics */}
@@ -353,18 +325,46 @@ function LogsPage() {
               {filteredLogs.length} Entries
             </span>
           </h3>
-          <div className="relative w-full sm:max-w-xs">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground/50" />
-            <input
-              type="text"
-              placeholder="Search by file name..."
-              value={searchTerm}
-              onChange={(e) => {
-                setSearchTerm(e.target.value);
-                setCurrentPage(1);
-              }}
-              className="w-full bg-background/50 border border-border/50 rounded-2xl pl-10 pr-4 py-2.5 text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all font-medium"
-            />
+          <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+            <div className="relative w-full sm:max-w-xs">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground/50" />
+              <input
+                type="text"
+                placeholder="Search by file name..."
+                value={searchTerm}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="w-full bg-background/50 border border-border/50 rounded-2xl pl-10 pr-4 py-2.5 text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all font-medium h-10"
+              />
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => refetch()}
+              disabled={isLoading || isFetching}
+              className="font-bold gap-2 hover:bg-secondary/60 h-10 rounded-xl text-foreground text-xs shrink-0"
+            >
+              <RefreshCw className={`size-3.5 ${isFetching ? "animate-spin" : ""}`} />
+              Refresh
+            </Button>
+            {isAdmin && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  if (confirm("Are you sure you want to clear all optimization and savings logs?")) {
+                    clearMutation.mutate();
+                  }
+                }}
+                disabled={clearMutation.isPending || logs.length === 0}
+                className="font-bold gap-2 text-destructive hover:bg-destructive/10 hover:text-destructive h-10 rounded-xl text-xs shrink-0"
+              >
+                <Trash2 className="size-3.5" />
+                Clear Log
+              </Button>
+            )}
           </div>
         </div>
 
