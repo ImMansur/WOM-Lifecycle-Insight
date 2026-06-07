@@ -27,13 +27,30 @@ import "../styles.css";
 interface LayoutContextType {
   isUploading: boolean;
   setIsUploading: (val: boolean) => void;
+  uploadProgress: number;
+  setUploadProgress: (val: number) => void;
+  uploadStatus: string;
+  setUploadStatus: (val: string) => void;
+  uploadSubStatus: string;
+  setUploadSubStatus: (val: string) => void;
 }
 
 const LayoutContext = createContext<LayoutContextType | undefined>(undefined);
 
 export function useLayout() {
   const ctx = useContext(LayoutContext);
-  if (!ctx) return { isUploading: false, setIsUploading: () => {} };
+  if (!ctx) {
+    return {
+      isUploading: false,
+      setIsUploading: () => {},
+      uploadProgress: 0,
+      setUploadProgress: () => {},
+      uploadStatus: "",
+      setUploadStatus: () => {},
+      uploadSubStatus: "",
+      setUploadSubStatus: () => {},
+    };
+  }
   return ctx;
 }
 
@@ -143,6 +160,9 @@ function AppLayout() {
   const navigate = useNavigate();
   const [showSignOutLoading, setShowSignOutLoading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadStatus, setUploadStatus] = useState("");
+  const [uploadSubStatus, setUploadSubStatus] = useState("");
 
   const navItems = useMemo(() => {
     if (!user) return [];
@@ -242,13 +262,25 @@ function AppLayout() {
   }
 
   return (
-    <LayoutContext.Provider value={{ isUploading, setIsUploading }}>
+    <LayoutContext.Provider
+      value={{
+        isUploading,
+        setIsUploading,
+        uploadProgress,
+        setUploadProgress,
+        uploadStatus,
+        setUploadStatus,
+        uploadSubStatus,
+        setUploadSubStatus,
+      }}
+    >
       {isUploading && (
         <LoadingScreen
           title="WOM"
           subtitle="Lifecycle"
-          statusText="Processing Document"
-          subStatusText="Extracting Data with AI Engine..."
+          statusText={uploadStatus || "Processing Document"}
+          subStatusText={uploadSubStatus || "Extracting Data with AI Engine..."}
+          progressValue={uploadProgress}
         />
       )}
       <div className="min-h-screen bg-background text-foreground selection:bg-primary/20 flex flex-col relative">

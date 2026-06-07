@@ -56,7 +56,12 @@ function UploadPage() {
   const navigate = useNavigate();
   const { user, loading } = useAuth();
   const { addNotification } = useNotifications();
-  const { setIsUploading } = useLayout();
+  const {
+    setIsUploading,
+    setUploadProgress,
+    setUploadStatus,
+    setUploadSubStatus,
+  } = useLayout();
   const [dragOver, setDragOver] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
 
@@ -80,35 +85,46 @@ function UploadPage() {
 
   const mutation = useMutation({
     mutationFn: async (filesToUpload: File[]): Promise<IngestResponse> => {
-      // On Vercel (not localhost), POST bodies > 4.5 MB are rejected.
-      // Detect at runtime: if we're not on localhost, use the SAS flow so
-      // files go directly from the browser to Azure Blob, bypassing Vercel.
       const isLocal =
         window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
 
-      if (!isLocal) {
-        // Vercel path: split each file into 3.5 MB chunks and POST them
-        // individually. The backend stages each chunk as an Azure Blob block
-        // (server-side — no browser→Azure CORS required) and processes the
-        // assembled file on the final chunk.
-        const combined: IngestResponse = {
-          processed: 0,
-          recommendations: [],
-          pendingDuplicates: [],
-          errors: [],
-        };
-        for (const file of filesToUpload) {
-          const result = await uploadFileInChunks(file);
+      const total = filesToUpload.length;
+      const combined: IngestResponse = {
+        processed: 0,
+        recommendations: [],
+        pendingDuplicates: [],
+        errors: [],
+      };
+
+      setUploadProgress(0);
+
+      for (let i = 0; i < total; i++) {
+        const file = filesToUpload[i];
+        setUploadStatus(`Processing Document ${i + 1} of ${total}`);
+        setUploadSubStatus(`Extracting & compressing '${file.name}'...`);
+
+        try {
+          let result: IngestResponse;
+          if (!isLocal) {
+            // Chunked upload for Vercel
+            result = await uploadFileInChunks(file);
+          } else {
+            // Direct upload for local dev
+            result = await ingestFiles([file]);
+          }
+
           combined.processed += result.processed;
           combined.recommendations.push(...result.recommendations);
           combined.pendingDuplicates.push(...result.pendingDuplicates);
           combined.errors.push(...result.errors);
+        } catch (err: any) {
+          combined.errors.push(`${file.name}: processing failed — ${err.message || err}`);
         }
-        return combined;
+
+        setUploadProgress(Math.round(((i + 1) / total) * 100));
       }
 
-      // Local dev: POST all files directly to the backend (no size limit).
-      return ingestFiles(filesToUpload);
+      return combined;
     },
     onMutate: () => {
       setIsUploading(true);
@@ -190,20 +206,7 @@ function UploadPage() {
     navigate({ to: "/dashboard" });
   };
 
-  useEffect(() => {
-    let interval: ReturnType<typeof setInterval>;
-    if (mutation.isPending) {
-      setProgress(0);
-      interval = setInterval(() => {
-        setProgress((prev) => {
-          const remaining = 99 - prev;
-          if (remaining <= 1) return 99;
-          return prev + Math.max(1, remaining * 0.1);
-        });
-      }, 500);
-    }
-    return () => clearInterval(interval);
-  }, [mutation.isPending]);
+
 
   const addFiles = (incoming: FileList | File[]) => {
     const filtered = Array.from(incoming).filter((f) => /\.(pdf|doc|docx)$/i.test(f.name));
