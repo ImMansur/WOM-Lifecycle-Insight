@@ -175,7 +175,7 @@ function LogsPage() {
               variant="ghost"
               size="sm"
               onClick={() => {
-                if (confirm("Are you sure you want to clear all telemetry and savings logs?")) {
+                if (confirm("Are you sure you want to clear all optimization and savings logs?")) {
                   clearMutation.mutate();
                 }
               }}
@@ -183,7 +183,7 @@ function LogsPage() {
               className="font-bold gap-2 text-destructive hover:bg-destructive/10 hover:text-destructive h-10 rounded-xl"
             >
               <Trash2 className="size-4" />
-              Clear Telemetry
+              Clear Log
             </Button>
           )}
         </div>
@@ -348,7 +348,7 @@ function LogsPage() {
         {/* Table Header Controls */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between p-6 border-b border-border/40">
           <h3 className="text-lg font-bold text-foreground font-display flex items-center gap-2">
-            Telemetry Events
+            Log
             <span className="text-xs bg-primary/15 text-primary rounded-full px-2.5 py-0.5 font-bold">
               {filteredLogs.length} Entries
             </span>
