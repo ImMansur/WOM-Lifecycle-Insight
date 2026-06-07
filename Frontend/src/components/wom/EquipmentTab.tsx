@@ -237,8 +237,12 @@ export function EquipmentTab({
               <div className="size-16 rounded-full bg-destructive/10 grid place-items-center">
                 <AlertTriangle className="size-8 text-destructive/70" />
               </div>
-              <p className="text-base font-semibold text-foreground">Could not load equipment data</p>
-              <p className="text-sm text-muted-foreground">Check that the backend server is running.</p>
+              <p className="text-base font-semibold text-foreground">
+                Could not load equipment data
+              </p>
+              <p className="text-sm text-muted-foreground">
+                Check that the backend server is running.
+              </p>
             </div>
           )}
 
@@ -248,9 +252,12 @@ export function EquipmentTab({
                 <FileSearch className="size-8 text-muted-foreground/50" />
               </div>
               <div>
-                <p className="text-base font-semibold text-foreground">No equipment records found</p>
+                <p className="text-base font-semibold text-foreground">
+                  No equipment records found
+                </p>
                 <p className="text-sm text-muted-foreground mt-1">
-                  Ingest certificates of conformance on the Recommendations tab to populate this registry.
+                  Ingest certificates of conformance on the Recommendations tab to populate this
+                  registry.
                 </p>
               </div>
             </div>
@@ -276,7 +283,9 @@ export function EquipmentTab({
                       <Wrench className="size-4 text-primary" />
                     </div>
                     <div className="min-w-0">
-                      <div className="text-sm font-semibold text-foreground truncate">{eq.name}</div>
+                      <div className="text-sm font-semibold text-foreground truncate">
+                        {eq.name}
+                      </div>
                       <div className="font-mono text-[10px] text-muted-foreground mt-0.5">
                         {eq.totalRecords} CoC{eq.totalRecords !== 1 ? "s" : ""}
                       </div>
@@ -322,7 +331,11 @@ export function EquipmentTab({
                   </div>
 
                   <div className="font-mono text-xs">
-                    <div className={overdue ? "text-destructive font-bold" : "text-foreground font-medium"}>
+                    <div
+                      className={
+                        overdue ? "text-destructive font-bold" : "text-foreground font-medium"
+                      }
+                    >
                       {eq.earliestRecertDue ?? "—"}
                     </div>
                     {eq.minMonthsToRecert !== null && (
@@ -352,7 +365,8 @@ export function EquipmentTab({
             <span>
               <span className="font-bold text-foreground">{equipment.length}</span> unique equipment
               types across{" "}
-              <span className="font-bold text-foreground">{recommendations.length}</span> certificates
+              <span className="font-bold text-foreground">{recommendations.length}</span>{" "}
+              certificates
             </span>
             <div className="font-mono text-[10px] uppercase tracking-[0.2em] opacity-60">
               WOM_Equipment · v1.0.0

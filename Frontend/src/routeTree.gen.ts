@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as UsersRouteImport } from './routes/users'
 import { Route as UploadRouteImport } from './routes/upload'
+import { Route as LogsRouteImport } from './routes/logs'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as ActionCenterRouteImport } from './routes/action-center'
@@ -24,6 +25,11 @@ const UsersRoute = UsersRouteImport.update({
 const UploadRoute = UploadRouteImport.update({
   id: '/upload',
   path: '/upload',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LogsRoute = LogsRouteImport.update({
+  id: '/logs',
+  path: '/logs',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -52,6 +58,7 @@ export interface FileRoutesByFullPath {
   '/action-center': typeof ActionCenterRoute
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
+  '/logs': typeof LogsRoute
   '/upload': typeof UploadRoute
   '/users': typeof UsersRoute
 }
@@ -60,6 +67,7 @@ export interface FileRoutesByTo {
   '/action-center': typeof ActionCenterRoute
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
+  '/logs': typeof LogsRoute
   '/upload': typeof UploadRoute
   '/users': typeof UsersRoute
 }
@@ -69,6 +77,7 @@ export interface FileRoutesById {
   '/action-center': typeof ActionCenterRoute
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
+  '/logs': typeof LogsRoute
   '/upload': typeof UploadRoute
   '/users': typeof UsersRoute
 }
@@ -79,16 +88,25 @@ export interface FileRouteTypes {
     | '/action-center'
     | '/dashboard'
     | '/login'
+    | '/logs'
     | '/upload'
     | '/users'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/action-center' | '/dashboard' | '/login' | '/upload' | '/users'
+  to:
+    | '/'
+    | '/action-center'
+    | '/dashboard'
+    | '/login'
+    | '/logs'
+    | '/upload'
+    | '/users'
   id:
     | '__root__'
     | '/'
     | '/action-center'
     | '/dashboard'
     | '/login'
+    | '/logs'
     | '/upload'
     | '/users'
   fileRoutesById: FileRoutesById
@@ -98,6 +116,7 @@ export interface RootRouteChildren {
   ActionCenterRoute: typeof ActionCenterRoute
   DashboardRoute: typeof DashboardRoute
   LoginRoute: typeof LoginRoute
+  LogsRoute: typeof LogsRoute
   UploadRoute: typeof UploadRoute
   UsersRoute: typeof UsersRoute
 }
@@ -116,6 +135,13 @@ declare module '@tanstack/react-router' {
       path: '/upload'
       fullPath: '/upload'
       preLoaderRoute: typeof UploadRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/logs': {
+      id: '/logs'
+      path: '/logs'
+      fullPath: '/logs'
+      preLoaderRoute: typeof LogsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -154,6 +180,7 @@ const rootRouteChildren: RootRouteChildren = {
   ActionCenterRoute: ActionCenterRoute,
   DashboardRoute: DashboardRoute,
   LoginRoute: LoginRoute,
+  LogsRoute: LogsRoute,
   UploadRoute: UploadRoute,
   UsersRoute: UsersRoute,
 }

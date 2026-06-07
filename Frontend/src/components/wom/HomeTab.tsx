@@ -59,8 +59,8 @@ interface HomeTabProps {
 // ─── Color Palette ───────────────────────────────────────────────────────────
 
 const PALETTE = {
-  orange: "#e07a2e",   // WOM primary
-  navy: "#1e2a42",   // WOM accent
+  orange: "#e07a2e", // WOM primary
+  navy: "#1e2a42", // WOM accent
   success: "#3cb97f",
   warning: "#e07a2e",
   danger: "#d94040",
@@ -72,8 +72,8 @@ const PALETTE = {
 };
 
 const PRIORITY_COLORS: Record<string, string> = {
-  "High": PALETTE.danger,
-  "Low": PALETTE.success,
+  High: PALETTE.danger,
+  Low: PALETTE.success,
   "Manual review": PALETTE.grey,
 };
 
@@ -85,14 +85,14 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 const CONFIDENCE_COLORS: Record<string, string> = {
-  "High": PALETTE.success,
-  "Low": PALETTE.grey,
+  High: PALETTE.success,
+  Low: PALETTE.grey,
 };
 
 const SOURCE_COLORS: Record<string, string> = {
-  "PDF": PALETTE.orange,
-  "DOC": PALETTE.navy,
-  "DOCX": PALETTE.steel,
+  PDF: PALETTE.orange,
+  DOC: PALETTE.navy,
+  DOCX: PALETTE.steel,
 };
 
 // ─── Custom Tooltip ───────────────────────────────────────────────────────────
@@ -167,12 +167,8 @@ function SectionHeader({
         {icon}
       </div>
       <div>
-        <h2 className="font-display text-lg font-bold tracking-tight text-foreground">
-          {title}
-        </h2>
-        {subtitle && (
-          <p className="text-xs text-muted-foreground">{subtitle}</p>
-        )}
+        <h2 className="font-display text-lg font-bold tracking-tight text-foreground">{title}</h2>
+        {subtitle && <p className="text-xs text-muted-foreground">{subtitle}</p>}
       </div>
     </div>
   );
@@ -211,16 +207,23 @@ export function MetricCard({
       <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
 
       <div className="flex items-start justify-between">
-        <div className={cn("flex size-10 items-center justify-center rounded-xl transition-transform group-hover:scale-110", cls.icon)}>
+        <div
+          className={cn(
+            "flex size-10 items-center justify-center rounded-xl transition-transform group-hover:scale-110",
+            cls.icon,
+          )}
+        >
           {icon}
         </div>
         {trend && (
           <div
             className={cn(
               "flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold",
-              trend === "up" ? "bg-success/10 text-success"
-                : trend === "down" ? "bg-destructive/10 text-destructive"
-                  : "bg-muted/50 text-muted-foreground"
+              trend === "up"
+                ? "bg-success/10 text-success"
+                : trend === "down"
+                  ? "bg-destructive/10 text-destructive"
+                  : "bg-muted/50 text-muted-foreground",
             )}
           >
             {trend === "up" ? (
@@ -240,11 +243,7 @@ export function MetricCard({
       <div className="mt-1 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/80">
         {label}
       </div>
-      {sub && (
-        <div className="mt-2 text-xs font-medium text-muted-foreground/60">
-          {sub}
-        </div>
-      )}
+      {sub && <div className="mt-2 text-xs font-medium text-muted-foreground/60">{sub}</div>}
     </div>
   );
 }
@@ -266,15 +265,13 @@ function ChartCard({
     <div
       className={cn(
         "rounded-2xl border border-border/50 bg-background/40 p-6 shadow-sm backdrop-blur-md",
-        className
+        className,
       )}
     >
       <div className="mb-1 font-display text-base font-bold tracking-tight text-foreground">
         {title}
       </div>
-      {subtitle && (
-        <div className="mb-4 text-xs text-muted-foreground">{subtitle}</div>
-      )}
+      {subtitle && <div className="mb-4 text-xs text-muted-foreground">{subtitle}</div>}
       {children}
     </div>
   );
@@ -359,8 +356,10 @@ export function MultiSelectDropdown({
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (
-        triggerRef.current && !triggerRef.current.contains(e.target as Node) &&
-        panelRef.current && !panelRef.current.contains(e.target as Node)
+        triggerRef.current &&
+        !triggerRef.current.contains(e.target as Node) &&
+        panelRef.current &&
+        !panelRef.current.contains(e.target as Node)
       ) {
         setOpen(false);
       }
@@ -419,7 +418,9 @@ export function MultiSelectDropdown({
         onClick={openPanel}
         className={cn(
           "flex h-10 w-full items-center gap-3 rounded-2xl border border-border/40 bg-secondary/40 pl-4 pr-10 text-sm transition-all hover:bg-secondary/60 hover:border-primary/20 focus:outline-none",
-          selected.length > 0 ? "text-foreground font-semibold" : "text-muted-foreground font-medium"
+          selected.length > 0
+            ? "text-foreground font-semibold"
+            : "text-muted-foreground font-medium",
         )}
       >
         <span className="shrink-0 text-muted-foreground/60">{icon}</span>
@@ -428,7 +429,10 @@ export function MultiSelectDropdown({
           <span className="absolute right-9 flex items-center">
             <button
               type="button"
-              onClick={(e) => { e.stopPropagation(); onChange([]); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onChange([]);
+              }}
               className="text-muted-foreground/60 hover:text-foreground p-1 rounded-full hover:bg-background"
             >
               <X className="size-3.5" />
@@ -439,86 +443,95 @@ export function MultiSelectDropdown({
       <ChevronDown className="pointer-events-none absolute right-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground/60" />
 
       {/* Dropdown panel — portalled into body so it escapes every stacking context */}
-      {open && createPortal(
-        <div
-          ref={panelRef}
-          style={panelStyle}
-          className="overflow-hidden rounded-xl border border-border/60 bg-background shadow-2xl"
-        >
-          {/* Search */}
-          <div className="border-b border-border/40 px-3 py-2">
-            <div className="relative">
-              <Search className="absolute left-2 top-1/2 size-3 -translate-y-1/2 text-muted-foreground/60" />
-              <input
-                autoFocus
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search part numbers…"
-                className="h-7 w-full rounded-md border border-border/40 bg-background/50 pl-6 text-[11px] text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-0"
-              />
+      {open &&
+        createPortal(
+          <div
+            ref={panelRef}
+            style={panelStyle}
+            className="overflow-hidden rounded-xl border border-border/60 bg-background shadow-2xl"
+          >
+            {/* Search */}
+            <div className="border-b border-border/40 px-3 py-2">
+              <div className="relative">
+                <Search className="absolute left-2 top-1/2 size-3 -translate-y-1/2 text-muted-foreground/60" />
+                <input
+                  autoFocus
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search part numbers…"
+                  className="h-7 w-full rounded-md border border-border/40 bg-background/50 pl-6 text-[11px] text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-0"
+                />
+              </div>
             </div>
-          </div>
 
-          {/* Select / deselect filtered */}
-          {filtered.length > 0 && (
-            <div className="flex items-center justify-between border-b border-border/30 px-3 py-1.5">
-              <button
-                type="button"
-                onClick={toggleAll}
-                className="text-[10px] font-bold text-primary hover:underline"
-              >
-                {allFilteredSelected ? "Deselect all" : "Select all"}
-                {search && " matching"}
-              </button>
-              {selected.length > 0 && (
+            {/* Select / deselect filtered */}
+            {filtered.length > 0 && (
+              <div className="flex items-center justify-between border-b border-border/30 px-3 py-1.5">
                 <button
                   type="button"
-                  onClick={() => onChange([])}
-                  className="flex items-center gap-1 text-[10px] font-bold text-muted-foreground hover:text-destructive"
+                  onClick={toggleAll}
+                  className="text-[10px] font-bold text-primary hover:underline"
                 >
-                  <X className="size-2.5" /> Clear ({selected.length})
+                  {allFilteredSelected ? "Deselect all" : "Select all"}
+                  {search && " matching"}
                 </button>
-              )}
-            </div>
-          )}
+                {selected.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => onChange([])}
+                    className="flex items-center gap-1 text-[10px] font-bold text-muted-foreground hover:text-destructive"
+                  >
+                    <X className="size-2.5" /> Clear ({selected.length})
+                  </button>
+                )}
+              </div>
+            )}
 
-          {/* Options */}
-          <div className="max-h-52 overflow-y-auto">
-            {filtered.length === 0 ? (
-              <div className="px-3 py-4 text-center text-[11px] text-muted-foreground">No matches</div>
-            ) : (
-              filtered.map((opt) => (
-                <button
-                  key={opt}
-                  type="button"
-                  onClick={() => toggle(opt)}
-                  className={cn(
-                    "flex w-full items-center gap-2.5 px-3 py-2 text-left text-xs transition-colors hover:bg-primary/5",
-                    selected.includes(opt) ? "text-foreground" : "text-muted-foreground"
-                  )}
-                >
-                  <span
+            {/* Options */}
+            <div className="max-h-52 overflow-y-auto">
+              {filtered.length === 0 ? (
+                <div className="px-3 py-4 text-center text-[11px] text-muted-foreground">
+                  No matches
+                </div>
+              ) : (
+                filtered.map((opt) => (
+                  <button
+                    key={opt}
+                    type="button"
+                    onClick={() => toggle(opt)}
                     className={cn(
-                      "flex size-4 shrink-0 items-center justify-center rounded border transition-colors",
-                      selected.includes(opt)
-                        ? "border-primary bg-primary text-primary-foreground"
-                        : "border-border/60 bg-background"
+                      "flex w-full items-center gap-2.5 px-3 py-2 text-left text-xs transition-colors hover:bg-primary/5",
+                      selected.includes(opt) ? "text-foreground" : "text-muted-foreground",
                     )}
                   >
-                    {selected.includes(opt) && (
-                      <svg viewBox="0 0 10 8" className="size-2.5" fill="none" stroke="currentColor" strokeWidth="2">
-                        <polyline points="1 4 4 7 9 1" />
-                      </svg>
-                    )}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate font-mono">{opt}</span>
-                </button>
-              ))
-            )}
-          </div>
-        </div>,
-        document.body
-      )}
+                    <span
+                      className={cn(
+                        "flex size-4 shrink-0 items-center justify-center rounded border transition-colors",
+                        selected.includes(opt)
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-border/60 bg-background",
+                      )}
+                    >
+                      {selected.includes(opt) && (
+                        <svg
+                          viewBox="0 0 10 8"
+                          className="size-2.5"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                        >
+                          <polyline points="1 4 4 7 9 1" />
+                        </svg>
+                      )}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate font-mono">{opt}</span>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
@@ -594,7 +607,7 @@ export function FilterBar({
                   "rounded-full px-5 py-2.5 text-xs font-bold transition-all",
                   timeFilter === key
                     ? "bg-primary text-white shadow-lg shadow-primary/25"
-                    : "text-muted-foreground hover:bg-secondary/80 hover:text-foreground"
+                    : "text-muted-foreground hover:bg-secondary/80 hover:text-foreground",
                 )}
               >
                 {label}
@@ -614,7 +627,7 @@ export function FilterBar({
                   "rounded-full px-5 py-2.5 text-xs font-bold transition-all",
                   priorityFilter === key
                     ? "bg-accent text-white shadow-lg shadow-black/10"
-                    : "text-muted-foreground hover:bg-secondary/80 hover:text-foreground"
+                    : "text-muted-foreground hover:bg-secondary/80 hover:text-foreground",
                 )}
               >
                 {label}
@@ -669,14 +682,14 @@ function UpcomingRow({ rec }: { rec: Recommendation }) {
       <div
         className={cn(
           "flex size-9 shrink-0 items-center justify-center rounded-lg text-xs font-bold",
-          overdue ? "bg-destructive/10 text-destructive" : dueSoon ? "bg-warning/10 text-warning" : "bg-success/10 text-success"
+          overdue
+            ? "bg-destructive/10 text-destructive"
+            : dueSoon
+              ? "bg-warning/10 text-warning"
+              : "bg-success/10 text-success",
         )}
       >
-        {overdue ? (
-          <ShieldAlert className="size-4" />
-        ) : (
-          <Calendar className="size-4" />
-        )}
+        {overdue ? <ShieldAlert className="size-4" /> : <Calendar className="size-4" />}
       </div>
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-semibold text-foreground">
@@ -690,7 +703,7 @@ function UpcomingRow({ rec }: { rec: Recommendation }) {
         <div
           className={cn(
             "font-mono text-sm font-bold",
-            overdue ? "text-destructive" : dueSoon ? "text-warning" : "text-success"
+            overdue ? "text-destructive" : dueSoon ? "text-warning" : "text-success",
           )}
         >
           {rec.recertificationDue ?? "—"}
@@ -713,13 +726,20 @@ export function ChartsSection({ filtered }: { filtered: Recommendation[] }) {
   const priorityData = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const r of filtered) counts[r.priority] = (counts[r.priority] ?? 0) + 1;
-    return Object.entries(counts).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
+    return Object.entries(counts)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value);
   }, [filtered]);
 
   const statusData = useMemo(() => {
     const counts: Record<string, number> = {};
-    for (const r of filtered) { const key = r.status || "Unknown"; counts[key] = (counts[key] ?? 0) + 1; }
-    return Object.entries(counts).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
+    for (const r of filtered) {
+      const key = r.status || "Unknown";
+      counts[key] = (counts[key] ?? 0) + 1;
+    }
+    return Object.entries(counts)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value);
   }, [filtered]);
 
   const sourceData = useMemo(() => {
@@ -731,7 +751,9 @@ export function ChartsSection({ filtered }: { filtered: Recommendation[] }) {
   const confidenceData = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const r of filtered) counts[r.confidence] = (counts[r.confidence] ?? 0) + 1;
-    return Object.entries(counts).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
+    return Object.entries(counts)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value);
   }, [filtered]);
 
   const timelineData = useMemo(() => {
@@ -757,22 +779,28 @@ export function ChartsSection({ filtered }: { filtered: Recommendation[] }) {
   const customerData = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const r of filtered) if (r.customer) counts[r.customer] = (counts[r.customer] ?? 0) + 1;
-    return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 8)
+    return Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8)
       .map(([name, count]) => ({ name: name.length > 20 ? name.slice(0, 18) + "…" : name, count }));
   }, [filtered]);
 
   const equipmentData = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const r of filtered) if (r.equipment) counts[r.equipment] = (counts[r.equipment] ?? 0) + 1;
-    return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 8)
+    return Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8)
       .map(([name, count]) => ({ name: name.length > 22 ? name.slice(0, 20) + "…" : name, count }));
   }, [filtered]);
 
-  const upcoming = useMemo(() =>
-    [...filtered].filter((r) => r.monthsToRecert !== null)
-      .sort((a, b) => (a.monthsToRecert ?? 999) - (b.monthsToRecert ?? 999))
-      .slice(0, 10),
-    [filtered]
+  const upcoming = useMemo(
+    () =>
+      [...filtered]
+        .filter((r) => r.monthsToRecert !== null)
+        .sort((a, b) => (a.monthsToRecert ?? 999) - (b.monthsToRecert ?? 999))
+        .slice(0, 10),
+    [filtered],
   );
 
   function timelineBarColor(label: string) {
@@ -790,21 +818,43 @@ export function ChartsSection({ filtered }: { filtered: Recommendation[] }) {
       <div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
         <ChartCard title="Priority Breakdown" subtitle="Filtered records by priority level">
           {priorityData.length === 0 ? (
-            <div className="flex h-[220px] items-center justify-center text-sm text-muted-foreground">No data</div>
+            <div className="flex h-[220px] items-center justify-center text-sm text-muted-foreground">
+              No data
+            </div>
           ) : (
             <>
               <ResponsiveContainer width="100%" height={220}>
                 <PieChart>
-                  <Pie data={priorityData} cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={3} dataKey="value" labelLine={false} label={renderCustomPieLabel}>
-                    {priorityData.map((e) => <Cell key={e.name} fill={PRIORITY_COLORS[e.name] ?? PALETTE.grey} />)}
+                  <Pie
+                    data={priorityData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={55}
+                    outerRadius={85}
+                    paddingAngle={3}
+                    dataKey="value"
+                    labelLine={false}
+                    label={renderCustomPieLabel}
+                  >
+                    {priorityData.map((e) => (
+                      <Cell key={e.name} fill={PRIORITY_COLORS[e.name] ?? PALETTE.grey} />
+                    ))}
                   </Pie>
-                  <Tooltip content={<PieTooltip total={priorityData.reduce((s, d) => s + d.value, 0)} />} />
+                  <Tooltip
+                    content={<PieTooltip total={priorityData.reduce((s, d) => s + d.value, 0)} />}
+                  />
                 </PieChart>
               </ResponsiveContainer>
               <div className="mt-2 flex flex-wrap justify-center gap-3">
                 {priorityData.map((d) => (
-                  <div key={d.name} className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                    <span className="size-2.5 rounded-full" style={{ backgroundColor: PRIORITY_COLORS[d.name] ?? PALETTE.grey }} />
+                  <div
+                    key={d.name}
+                    className="flex items-center gap-1.5 text-[11px] text-muted-foreground"
+                  >
+                    <span
+                      className="size-2.5 rounded-full"
+                      style={{ backgroundColor: PRIORITY_COLORS[d.name] ?? PALETTE.grey }}
+                    />
                     {d.name}: <span className="font-bold text-foreground">{d.value}</span>
                   </div>
                 ))}
@@ -815,21 +865,43 @@ export function ChartsSection({ filtered }: { filtered: Recommendation[] }) {
 
         <ChartCard title="Status Distribution" subtitle="Lifecycle status across filtered records">
           {statusData.length === 0 ? (
-            <div className="flex h-[220px] items-center justify-center text-sm text-muted-foreground">No data</div>
+            <div className="flex h-[220px] items-center justify-center text-sm text-muted-foreground">
+              No data
+            </div>
           ) : (
             <>
               <ResponsiveContainer width="100%" height={220}>
                 <PieChart>
-                  <Pie data={statusData} cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={3} dataKey="value" labelLine={false} label={renderCustomPieLabel}>
-                    {statusData.map((e) => <Cell key={e.name} fill={STATUS_COLORS[e.name] ?? PALETTE.grey} />)}
+                  <Pie
+                    data={statusData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={55}
+                    outerRadius={85}
+                    paddingAngle={3}
+                    dataKey="value"
+                    labelLine={false}
+                    label={renderCustomPieLabel}
+                  >
+                    {statusData.map((e) => (
+                      <Cell key={e.name} fill={STATUS_COLORS[e.name] ?? PALETTE.grey} />
+                    ))}
                   </Pie>
-                  <Tooltip content={<PieTooltip total={statusData.reduce((s, d) => s + d.value, 0)} />} />
+                  <Tooltip
+                    content={<PieTooltip total={statusData.reduce((s, d) => s + d.value, 0)} />}
+                  />
                 </PieChart>
               </ResponsiveContainer>
               <div className="mt-2 flex flex-wrap justify-center gap-3">
                 {statusData.map((d) => (
-                  <div key={d.name} className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                    <span className="size-2.5 rounded-full" style={{ backgroundColor: STATUS_COLORS[d.name] ?? PALETTE.grey }} />
+                  <div
+                    key={d.name}
+                    className="flex items-center gap-1.5 text-[11px] text-muted-foreground"
+                  >
+                    <span
+                      className="size-2.5 rounded-full"
+                      style={{ backgroundColor: STATUS_COLORS[d.name] ?? PALETTE.grey }}
+                    />
                     <span className="max-w-[120px] truncate">{d.name}:</span>
                     <span className="font-bold text-foreground">{d.value}</span>
                   </div>
@@ -839,23 +911,48 @@ export function ChartsSection({ filtered }: { filtered: Recommendation[] }) {
           )}
         </ChartCard>
 
-        <ChartCard title="Extraction Confidence" subtitle="AI confidence level across filtered records">
+        <ChartCard
+          title="Extraction Confidence"
+          subtitle="AI confidence level across filtered records"
+        >
           {confidenceData.length === 0 ? (
-            <div className="flex h-[220px] items-center justify-center text-sm text-muted-foreground">No data</div>
+            <div className="flex h-[220px] items-center justify-center text-sm text-muted-foreground">
+              No data
+            </div>
           ) : (
             <>
               <ResponsiveContainer width="100%" height={220}>
                 <PieChart>
-                  <Pie data={confidenceData} cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={3} dataKey="value" labelLine={false} label={renderCustomPieLabel}>
-                    {confidenceData.map((e) => <Cell key={e.name} fill={CONFIDENCE_COLORS[e.name] ?? PALETTE.grey} />)}
+                  <Pie
+                    data={confidenceData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={55}
+                    outerRadius={85}
+                    paddingAngle={3}
+                    dataKey="value"
+                    labelLine={false}
+                    label={renderCustomPieLabel}
+                  >
+                    {confidenceData.map((e) => (
+                      <Cell key={e.name} fill={CONFIDENCE_COLORS[e.name] ?? PALETTE.grey} />
+                    ))}
                   </Pie>
-                  <Tooltip content={<PieTooltip total={confidenceData.reduce((s, d) => s + d.value, 0)} />} />
+                  <Tooltip
+                    content={<PieTooltip total={confidenceData.reduce((s, d) => s + d.value, 0)} />}
+                  />
                 </PieChart>
               </ResponsiveContainer>
               <div className="mt-2 flex flex-wrap justify-center gap-3">
                 {confidenceData.map((d) => (
-                  <div key={d.name} className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                    <span className="size-2.5 rounded-full" style={{ backgroundColor: CONFIDENCE_COLORS[d.name] ?? PALETTE.grey }} />
+                  <div
+                    key={d.name}
+                    className="flex items-center gap-1.5 text-[11px] text-muted-foreground"
+                  >
+                    <span
+                      className="size-2.5 rounded-full"
+                      style={{ backgroundColor: CONFIDENCE_COLORS[d.name] ?? PALETTE.grey }}
+                    />
                     {d.name}: <span className="font-bold text-foreground">{d.value}</span>
                   </div>
                 ))}
@@ -867,15 +964,34 @@ export function ChartsSection({ filtered }: { filtered: Recommendation[] }) {
 
       {/* Row 2 — timeline + top customers */}
       <div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <ChartCard title="Recertification Timeline" subtitle="How far out is each certificate from recertification?">
+        <ChartCard
+          title="Recertification Timeline"
+          subtitle="How far out is each certificate from recertification?"
+        >
           <ResponsiveContainer width="100%" height={260}>
-            <BarChart data={timelineData} barSize={32} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
+            <BarChart
+              data={timelineData}
+              barSize={32}
+              margin={{ top: 4, right: 8, left: -16, bottom: 0 }}
+            >
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" vertical={false} />
-              <XAxis dataKey="label" tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }} axisLine={false} tickLine={false} />
-              <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }} axisLine={false} tickLine={false} />
+              <XAxis
+                dataKey="label"
+                tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }}
+                axisLine={false}
+                tickLine={false}
+              />
+              <YAxis
+                allowDecimals={false}
+                tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }}
+                axisLine={false}
+                tickLine={false}
+              />
               <Tooltip content={<ChartTooltip />} />
               <Bar dataKey="count" name="Records" radius={[6, 6, 0, 0]}>
-                {timelineData.map((e) => <Cell key={e.label} fill={timelineBarColor(e.label)} />)}
+                {timelineData.map((e) => (
+                  <Cell key={e.label} fill={timelineBarColor(e.label)} />
+                ))}
               </Bar>
             </BarChart>
           </ResponsiveContainer>
@@ -888,7 +1004,10 @@ export function ChartsSection({ filtered }: { filtered: Recommendation[] }) {
               { label: "12–24 mo", color: PALETTE.success },
               { label: "24+ mo", color: PALETTE.grey },
             ].map(({ label, color }) => (
-              <div key={label} className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+              <div
+                key={label}
+                className="flex items-center gap-1.5 text-[10px] text-muted-foreground"
+              >
                 <span className="size-2 rounded-sm" style={{ backgroundColor: color }} />
                 {label}
               </div>
@@ -896,15 +1015,38 @@ export function ChartsSection({ filtered }: { filtered: Recommendation[] }) {
           </div>
         </ChartCard>
 
-        <ChartCard title="Top Customers by Records" subtitle="Customers with the most ingested certificates">
+        <ChartCard
+          title="Top Customers by Records"
+          subtitle="Customers with the most ingested certificates"
+        >
           {customerData.length === 0 ? (
-            <div className="flex h-[260px] items-center justify-center text-sm text-muted-foreground">No customer data available</div>
+            <div className="flex h-[260px] items-center justify-center text-sm text-muted-foreground">
+              No customer data available
+            </div>
           ) : (
             <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={customerData} layout="vertical" barSize={18} margin={{ top: 4, right: 16, left: 4, bottom: 0 }}>
+              <BarChart
+                data={customerData}
+                layout="vertical"
+                barSize={18}
+                margin={{ top: 4, right: 16, left: 4, bottom: 0 }}
+              >
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" horizontal={false} />
-                <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }} axisLine={false} tickLine={false} />
-                <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 10, fill: "var(--color-muted-foreground)" }} axisLine={false} tickLine={false} />
+                <XAxis
+                  type="number"
+                  allowDecimals={false}
+                  tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <YAxis
+                  type="category"
+                  dataKey="name"
+                  width={120}
+                  tick={{ fontSize: 10, fill: "var(--color-muted-foreground)" }}
+                  axisLine={false}
+                  tickLine={false}
+                />
                 <Tooltip content={<ChartTooltip />} />
                 <Bar dataKey="count" name="Records" fill={PALETTE.navy} radius={[0, 6, 6, 0]} />
               </BarChart>
@@ -917,13 +1059,33 @@ export function ChartsSection({ filtered }: { filtered: Recommendation[] }) {
       <div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
         <ChartCard title="Top Equipment Types" subtitle="Most frequently appearing equipment">
           {equipmentData.length === 0 ? (
-            <div className="flex h-[240px] items-center justify-center text-sm text-muted-foreground">No equipment data available</div>
+            <div className="flex h-[240px] items-center justify-center text-sm text-muted-foreground">
+              No equipment data available
+            </div>
           ) : (
             <ResponsiveContainer width="100%" height={240}>
-              <BarChart data={equipmentData} layout="vertical" barSize={18} margin={{ top: 4, right: 16, left: 4, bottom: 0 }}>
+              <BarChart
+                data={equipmentData}
+                layout="vertical"
+                barSize={18}
+                margin={{ top: 4, right: 16, left: 4, bottom: 0 }}
+              >
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" horizontal={false} />
-                <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }} axisLine={false} tickLine={false} />
-                <YAxis type="category" dataKey="name" width={130} tick={{ fontSize: 10, fill: "var(--color-muted-foreground)" }} axisLine={false} tickLine={false} />
+                <XAxis
+                  type="number"
+                  allowDecimals={false}
+                  tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <YAxis
+                  type="category"
+                  dataKey="name"
+                  width={130}
+                  tick={{ fontSize: 10, fill: "var(--color-muted-foreground)" }}
+                  axisLine={false}
+                  tickLine={false}
+                />
                 <Tooltip content={<ChartTooltip />} />
                 <Bar dataKey="count" name="Records" fill={PALETTE.orange} radius={[0, 6, 6, 0]} />
               </BarChart>
@@ -933,10 +1095,14 @@ export function ChartsSection({ filtered }: { filtered: Recommendation[] }) {
 
         <ChartCard title="Upcoming Recertifications" subtitle="Next 10 records sorted by urgency">
           {upcoming.length === 0 ? (
-            <div className="flex h-[240px] items-center justify-center text-sm text-muted-foreground">No upcoming recertifications</div>
+            <div className="flex h-[240px] items-center justify-center text-sm text-muted-foreground">
+              No upcoming recertifications
+            </div>
           ) : (
             <div className="divide-y divide-border/30 overflow-hidden rounded-xl border border-border/40">
-              {upcoming.map((r) => <UpcomingRow key={r.id} rec={r} />)}
+              {upcoming.map((r) => (
+                <UpcomingRow key={r.id} rec={r} />
+              ))}
             </div>
           )}
         </ChartCard>
@@ -963,14 +1129,16 @@ export function HomeTab({
 
   // ── Sorted unique client names for dropdown ────────────────────────────────
   const clientOptions = useMemo(() => {
-    return [...new Set(recommendations.map((r) => r.customer).filter(Boolean) as string[])]
-      .sort((a, b) => a.localeCompare(b));
+    return [...new Set(recommendations.map((r) => r.customer).filter(Boolean) as string[])].sort(
+      (a, b) => a.localeCompare(b),
+    );
   }, [recommendations]);
 
   // ── Sorted unique locations (from jobOrProject) for dropdown ──────────────
   const locationOptions = useMemo(() => {
-    return [...new Set(recommendations.map((r) => r.location).filter(Boolean) as string[])]
-      .sort((a, b) => a.localeCompare(b));
+    return [...new Set(recommendations.map((r) => r.location).filter(Boolean) as string[])].sort(
+      (a, b) => a.localeCompare(b),
+    );
   }, [recommendations]);
 
   // ── Sorted unique part numbers for dropdown ────────────────────────────
@@ -990,7 +1158,8 @@ export function HomeTab({
       } else if (timeFilter === "6m") {
         if (r.monthsToRecert === null || r.monthsToRecert > 6 || r.monthsToRecert < 0) return false;
       } else if (timeFilter === "12m") {
-        if (r.monthsToRecert === null || r.monthsToRecert > 12 || r.monthsToRecert < 0) return false;
+        if (r.monthsToRecert === null || r.monthsToRecert > 12 || r.monthsToRecert < 0)
+          return false;
       }
 
       // Priority filter
@@ -1000,14 +1169,23 @@ export function HomeTab({
       if (selectedClients.length > 0 && !selectedClients.includes(r.customer ?? "")) return false;
 
       // Client location — match any of the selected locations
-      if (selectedLocations.length > 0 && !selectedLocations.includes(r.location ?? "")) return false;
+      if (selectedLocations.length > 0 && !selectedLocations.includes(r.location ?? ""))
+        return false;
 
       // Part numbers — match any of the selected parts
-      if (selectedParts.length > 0 && !r.partNumbers.some((p) => selectedParts.includes(p.number))) return false;
+      if (selectedParts.length > 0 && !r.partNumbers.some((p) => selectedParts.includes(p.number)))
+        return false;
 
       return true;
     });
-  }, [recommendations, timeFilter, priorityFilter, selectedClients, selectedLocations, selectedParts]);
+  }, [
+    recommendations,
+    timeFilter,
+    priorityFilter,
+    selectedClients,
+    selectedLocations,
+    selectedParts,
+  ]);
 
   // ── Derived metrics ────────────────────────────────────────────────────────
   const metrics = useMemo(() => {
@@ -1016,16 +1194,16 @@ export function HomeTab({
     const high = recs.filter((r) => r.priority === "High").length;
     const overdue = recs.filter((r) => r.status === "Expired / overdue").length;
     const dueSoon = recs.filter(
-      (r) => r.monthsToRecert !== null && r.monthsToRecert >= 0 && r.monthsToRecert <= 6
+      (r) => r.monthsToRecert !== null && r.monthsToRecert >= 0 && r.monthsToRecert <= 6,
     ).length;
     const customers = new Set(recs.map((r) => r.customer).filter(Boolean)).size;
     const equipment = new Set(recs.map((r) => r.equipment).filter(Boolean)).size;
     const avgAge =
       recs.filter((r) => r.ageMonths !== null).length > 0
         ? Math.round(
-          recs.filter((r) => r.ageMonths !== null).reduce((a, r) => a + (r.ageMonths ?? 0), 0) /
-          recs.filter((r) => r.ageMonths !== null).length
-        )
+            recs.filter((r) => r.ageMonths !== null).reduce((a, r) => a + (r.ageMonths ?? 0), 0) /
+              recs.filter((r) => r.ageMonths !== null).length,
+          )
         : null;
     const parts = recs.reduce((a, r) => a + r.partNumbers.length, 0);
     const highConf = recs.filter((r) => r.confidence === "High").length;
@@ -1076,7 +1254,6 @@ export function HomeTab({
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value);
   }, [filtered]);
-
 
   // ── Recertification timeline bar chart ────────────────────────────────────
   const timelineData = useMemo(() => {
@@ -1146,12 +1323,11 @@ export function HomeTab({
 
   // Records that need human review and haven't been reviewed yet
   const needsHumanReview = recommendations.filter(
-    (r) => r.priority === "Manual review" && !r.humanReviewed
+    (r) => r.priority === "Manual review" && !r.humanReviewed,
   );
 
   return (
     <div className="mx-auto w-full max-w-[1600px] px-6 py-8">
-
       {/* ── Page header ─────────────────────────────────────────────────── */}
       <div className="mb-8 flex items-center justify-between">
         <div>
@@ -1163,7 +1339,8 @@ export function HomeTab({
             Operations <span className="text-primary italic">Dashboard</span>
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            Real-time equipment lifecycle intelligence across all ingested certificates of conformance.
+            Real-time equipment lifecycle intelligence across all ingested certificates of
+            conformance.
           </p>
         </div>
         <div className="flex flex-col items-end gap-2">
@@ -1342,7 +1519,6 @@ export function HomeTab({
 
           {/* ── Charts Row 1 ────────────────────────────────────────────── */}
           <div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
-
             {/* Priority Donut */}
             <ChartCard title="Priority Breakdown" subtitle="Filtered records by priority level">
               {priorityData.length === 0 ? (
@@ -1371,12 +1547,19 @@ export function HomeTab({
                           />
                         ))}
                       </Pie>
-                      <Tooltip content={<PieTooltip total={priorityData.reduce((s, d) => s + d.value, 0)} />} />
+                      <Tooltip
+                        content={
+                          <PieTooltip total={priorityData.reduce((s, d) => s + d.value, 0)} />
+                        }
+                      />
                     </PieChart>
                   </ResponsiveContainer>
                   <div className="mt-2 flex flex-wrap justify-center gap-3">
                     {priorityData.map((d) => (
-                      <div key={d.name} className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                      <div
+                        key={d.name}
+                        className="flex items-center gap-1.5 text-[11px] text-muted-foreground"
+                      >
                         <span
                           className="size-2.5 rounded-full"
                           style={{ backgroundColor: PRIORITY_COLORS[d.name] ?? PALETTE.grey }}
@@ -1390,7 +1573,10 @@ export function HomeTab({
             </ChartCard>
 
             {/* Status Donut */}
-            <ChartCard title="Status Distribution" subtitle="Lifecycle status across filtered records">
+            <ChartCard
+              title="Status Distribution"
+              subtitle="Lifecycle status across filtered records"
+            >
               {statusData.length === 0 ? (
                 <div className="flex h-[220px] items-center justify-center text-sm text-muted-foreground">
                   No data
@@ -1411,18 +1597,20 @@ export function HomeTab({
                         label={renderCustomPieLabel}
                       >
                         {statusData.map((entry) => (
-                          <Cell
-                            key={entry.name}
-                            fill={STATUS_COLORS[entry.name] ?? PALETTE.grey}
-                          />
+                          <Cell key={entry.name} fill={STATUS_COLORS[entry.name] ?? PALETTE.grey} />
                         ))}
                       </Pie>
-                      <Tooltip content={<PieTooltip total={statusData.reduce((s, d) => s + d.value, 0)} />} />
+                      <Tooltip
+                        content={<PieTooltip total={statusData.reduce((s, d) => s + d.value, 0)} />}
+                      />
                     </PieChart>
                   </ResponsiveContainer>
                   <div className="mt-2 flex flex-wrap justify-center gap-3">
                     {statusData.map((d) => (
-                      <div key={d.name} className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                      <div
+                        key={d.name}
+                        className="flex items-center gap-1.5 text-[11px] text-muted-foreground"
+                      >
                         <span
                           className="size-2.5 rounded-full"
                           style={{ backgroundColor: STATUS_COLORS[d.name] ?? PALETTE.grey }}
@@ -1437,7 +1625,10 @@ export function HomeTab({
             </ChartCard>
 
             {/* Confidence Donut */}
-            <ChartCard title="Extraction Confidence" subtitle="AI confidence level across filtered records">
+            <ChartCard
+              title="Extraction Confidence"
+              subtitle="AI confidence level across filtered records"
+            >
               {confidenceData.length === 0 ? (
                 <div className="flex h-[220px] items-center justify-center text-sm text-muted-foreground">
                   No data
@@ -1464,12 +1655,19 @@ export function HomeTab({
                           />
                         ))}
                       </Pie>
-                      <Tooltip content={<PieTooltip total={confidenceData.reduce((s, d) => s + d.value, 0)} />} />
+                      <Tooltip
+                        content={
+                          <PieTooltip total={confidenceData.reduce((s, d) => s + d.value, 0)} />
+                        }
+                      />
                     </PieChart>
                   </ResponsiveContainer>
                   <div className="mt-2 flex flex-wrap justify-center gap-3">
                     {confidenceData.map((d) => (
-                      <div key={d.name} className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                      <div
+                        key={d.name}
+                        className="flex items-center gap-1.5 text-[11px] text-muted-foreground"
+                      >
                         <span
                           className="size-2.5 rounded-full"
                           style={{ backgroundColor: CONFIDENCE_COLORS[d.name] ?? PALETTE.grey }}
@@ -1481,19 +1679,21 @@ export function HomeTab({
                 </>
               )}
             </ChartCard>
-
           </div>
 
           {/* ── Charts Row 2 ────────────────────────────────────────────── */}
           <div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
-
             {/* Recertification Timeline */}
             <ChartCard
               title="Recertification Timeline"
               subtitle="How far out is each certificate from recertification?"
             >
               <ResponsiveContainer width="100%" height={260}>
-                <BarChart data={timelineData} barSize={32} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
+                <BarChart
+                  data={timelineData}
+                  barSize={32}
+                  margin={{ top: 4, right: 8, left: -16, bottom: 0 }}
+                >
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" vertical={false} />
                   <XAxis
                     dataKey="label"
@@ -1525,7 +1725,10 @@ export function HomeTab({
                   { label: "12–24 mo", color: PALETTE.success },
                   { label: "24+ mo", color: PALETTE.grey },
                 ].map(({ label, color }) => (
-                  <div key={label} className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                  <div
+                    key={label}
+                    className="flex items-center gap-1.5 text-[10px] text-muted-foreground"
+                  >
                     <span className="size-2 rounded-sm" style={{ backgroundColor: color }} />
                     {label}
                   </div>
@@ -1550,7 +1753,11 @@ export function HomeTab({
                     barSize={18}
                     margin={{ top: 4, right: 16, left: 4, bottom: 0 }}
                   >
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" horizontal={false} />
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      stroke="rgba(0,0,0,0.06)"
+                      horizontal={false}
+                    />
                     <XAxis
                       type="number"
                       allowDecimals={false}
@@ -1576,12 +1783,8 @@ export function HomeTab({
 
           {/* ── Charts Row 3 ────────────────────────────────────────────── */}
           <div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
-
             {/* Top Equipment */}
-            <ChartCard
-              title="Top Equipment Types"
-              subtitle="Most frequently appearing equipment"
-            >
+            <ChartCard title="Top Equipment Types" subtitle="Most frequently appearing equipment">
               {equipmentData.length === 0 ? (
                 <div className="flex h-[240px] items-center justify-center text-sm text-muted-foreground">
                   No equipment data available
@@ -1594,7 +1797,11 @@ export function HomeTab({
                     barSize={18}
                     margin={{ top: 4, right: 16, left: 4, bottom: 0 }}
                   >
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" horizontal={false} />
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      stroke="rgba(0,0,0,0.06)"
+                      horizontal={false}
+                    />
                     <XAxis
                       type="number"
                       allowDecimals={false}
@@ -1611,7 +1818,12 @@ export function HomeTab({
                       tickLine={false}
                     />
                     <Tooltip content={<ChartTooltip />} />
-                    <Bar dataKey="count" name="Records" fill={PALETTE.orange} radius={[0, 6, 6, 0]} />
+                    <Bar
+                      dataKey="count"
+                      name="Records"
+                      fill={PALETTE.orange}
+                      radius={[0, 6, 6, 0]}
+                    />
                   </BarChart>
                 </ResponsiveContainer>
               )}
@@ -1640,8 +1852,7 @@ export function HomeTab({
           <div className="mt-4 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border/30 bg-foreground/[0.015] px-6 py-4 text-xs text-muted-foreground">
             <div className="flex flex-wrap items-center gap-6">
               <div>
-                Showing{" "}
-                <span className="font-bold text-foreground">{metrics.total}</span> of{" "}
+                Showing <span className="font-bold text-foreground">{metrics.total}</span> of{" "}
                 <span className="font-bold text-foreground">{recommendations.length}</span> records
               </div>
               <div className="size-1 rounded-full bg-border" />

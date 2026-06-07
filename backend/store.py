@@ -9,7 +9,7 @@ from typing import List, Optional
 
 import firebase_admin
 from firebase_admin import credentials, firestore
-from models import Action, Job, JobStatus, Recommendation
+from models import Action, Job, JobStatus, Recommendation, CompressionLog
 
 # Initialize Firebase Admin
 def initialize_firestore():
@@ -295,3 +295,57 @@ class JobStore:
 
 action_store = ActionStore()
 job_store = JobStore()
+
+
+class CompressionLogStore:
+    """Firestore-backed store for Compression and Cost-Saving logs."""
+
+    def __init__(self) -> None:
+        self.db = initialize_firestore()
+        self.ready = self.db is not None
+
+    def all(self) -> List[CompressionLog]:
+        if not self.ready:
+            return []
+        try:
+            docs = self.db.collection("compression_logs").order_by("timestamp", direction=firestore.Query.DESCENDING).stream()
+            results: List[CompressionLog] = []
+            for doc in docs:
+                try:
+                    results.append(CompressionLog(**doc.to_dict()))
+                except Exception as e:
+                    logging.warning(f"Skipping invalid compression log doc {doc.id}: {e}")
+            return results
+        except Exception as e:
+            logging.error(f"Firestore error in CompressionLogStore.all(): {e}")
+            return []
+
+    def add(self, log: CompressionLog) -> None:
+        if not self.ready:
+            self.db = initialize_firestore()
+            self.ready = self.db is not None
+            if not self.ready:
+                logging.error("Cannot add log: Firestore still not initialized.")
+                return
+        try:
+            self.db.collection("compression_logs").document(log.id).set(log.model_dump())
+            logging.info(f"Compression log {log.id} saved to Firestore.")
+        except Exception as e:
+            logging.error(f"Firestore error in CompressionLogStore.add(): {e}")
+
+    def clear(self) -> None:
+        if not self.ready:
+            return
+        try:
+            batch = self.db.batch()
+            docs = self.db.collection("compression_logs").list_documents()
+            for doc in docs:
+                batch.delete(doc)
+            batch.commit()
+            logging.info("All compression logs cleared from Firestore.")
+        except Exception as e:
+            logging.error(f"Firestore error in CompressionLogStore.clear(): {e}")
+
+
+compression_log_store = CompressionLogStore()
+

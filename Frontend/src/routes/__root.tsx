@@ -33,7 +33,7 @@ const LayoutContext = createContext<LayoutContextType | undefined>(undefined);
 
 export function useLayout() {
   const ctx = useContext(LayoutContext);
-  if (!ctx) return { isUploading: false, setIsUploading: () => { } };
+  if (!ctx) return { isUploading: false, setIsUploading: () => {} };
   return ctx;
 }
 
@@ -66,9 +66,7 @@ function ErrorComponent({ error }: { error: Error }) {
         <h1 className="text-xl font-semibold tracking-tight text-foreground">
           System Initialization Issue
         </h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          {error.message}
-        </p>
+        <p className="mt-2 text-sm text-muted-foreground">{error.message}</p>
         <button
           onClick={() => window.location.reload()}
           className="mt-6 inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
@@ -120,9 +118,7 @@ function UserMenu({ onSignOut }: { onSignOut: () => void }) {
           <div className="font-semibold text-foreground truncate">
             {user.displayName ?? "Admin"}
           </div>
-          <div className="text-xs text-muted-foreground font-normal truncate">
-            {user.email}
-          </div>
+          <div className="text-xs text-muted-foreground font-normal truncate">{user.email}</div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuItem className="gap-2 text-muted-foreground cursor-pointer">
@@ -151,11 +147,27 @@ function AppLayout() {
   const navItems = useMemo(() => {
     if (!user) return [];
     return [
-      ...(user.role !== "Uploader" ? [{ id: "home", label: "Home", to: "/dashboard", search: { tab: "Home" } }] : []),
+      ...(user.role !== "Uploader"
+        ? [{ id: "home", label: "Home", to: "/dashboard", search: { tab: "Home" } }]
+        : []),
       ...(user.role !== "Analysis" ? [{ id: "upload", label: "Upload", to: "/upload" }] : []),
-      ...(user.role !== "Uploader" ? [{ id: "action-center", label: "Action Center", to: "/action-center" }] : []),
-      ...(user.role !== "Uploader" ? [{ id: "rules", label: "Lifecycle Rules", to: "/dashboard", search: { tab: "Lifecycle Rules" } }] : []),
-      ...(user.role === "Fleet Manager" || user.role === "System Administrator" ? [{ id: "users", label: "Users", to: "/users" }] : []),
+      ...(user.role !== "Uploader"
+        ? [{ id: "action-center", label: "Action Center", to: "/action-center" }]
+        : []),
+      ...(user.role !== "Uploader" ? [{ id: "logs", label: "Logs & Savings", to: "/logs" }] : []),
+      ...(user.role !== "Uploader"
+        ? [
+            {
+              id: "rules",
+              label: "Lifecycle Rules",
+              to: "/dashboard",
+              search: { tab: "Lifecycle Rules" },
+            },
+          ]
+        : []),
+      ...(user.role === "Fleet Manager" || user.role === "System Administrator"
+        ? [{ id: "users", label: "Users", to: "/users" }]
+        : []),
     ];
   }, [user]);
 
@@ -229,21 +241,16 @@ function AppLayout() {
     return <Outlet />;
   }
 
-  if (isUploading) {
-    return (
-      <LayoutContext.Provider value={{ isUploading, setIsUploading }}>
+  return (
+    <LayoutContext.Provider value={{ isUploading, setIsUploading }}>
+      {isUploading && (
         <LoadingScreen
           title="WOM"
           subtitle="Lifecycle"
           statusText="Processing Document"
           subStatusText="Extracting Data with AI Engine..."
         />
-      </LayoutContext.Provider>
-    );
-  }
-
-  return (
-    <LayoutContext.Provider value={{ isUploading, setIsUploading }}>
+      )}
       <div className="min-h-screen bg-background text-foreground selection:bg-primary/20 flex flex-col relative">
         {/* Fixed Background Layers */}
         <div className="fixed inset-0 z-0 pointer-events-none">
@@ -273,55 +280,53 @@ function AppLayout() {
             </div>
 
             <nav
-                ref={containerRef}
-                className="relative mx-auto hidden items-center gap-1 rounded-full bg-secondary/80 p-1.5 backdrop-blur-sm md:flex"
-              >
-                {coords.width > 0 && (
-                  <div
-                    className="absolute top-1.5 bottom-1.5 bg-primary rounded-full transition-all duration-300 ease-in-out shadow-md shadow-primary/25"
-                    style={{
-                      left: `${coords.left}px`,
-                      width: `${coords.width}px`,
+              ref={containerRef}
+              className="relative mx-auto hidden items-center gap-1 rounded-full bg-secondary/80 p-1.5 backdrop-blur-sm md:flex"
+            >
+              {coords.width > 0 && (
+                <div
+                  className="absolute top-1.5 bottom-1.5 bg-primary rounded-full transition-all duration-300 ease-in-out shadow-md shadow-primary/25"
+                  style={{
+                    left: `${coords.left}px`,
+                    width: `${coords.width}px`,
+                  }}
+                />
+              )}
+
+              {navItems.map((item) => {
+                const active =
+                  item.to === location.pathname &&
+                  (!item.search || item.search.tab === (search.tab || "Home"));
+
+                return (
+                  <Link
+                    key={item.id}
+                    to={item.to}
+                    search={item.search}
+                    onClick={(e) => {
+                      const el = e.currentTarget;
+                      if (containerRef.current) {
+                        const containerRect = containerRef.current.getBoundingClientRect();
+                        const elRect = el.getBoundingClientRect();
+                        setCoords({
+                          left: elRect.left - containerRect.left,
+                          width: elRect.width,
+                        });
+                      }
                     }}
-                  />
-                )}
-
-                {navItems.map((item) => {
-                  const active =
-                    item.to === location.pathname &&
-                    (!item.search || item.search.tab === (search.tab || "Home"));
-
-                  return (
-                    <Link
-                      key={item.id}
-                      to={item.to}
-                      search={item.search}
-                      onClick={(e) => {
-                        const el = e.currentTarget;
-                        if (containerRef.current) {
-                          const containerRect = containerRef.current.getBoundingClientRect();
-                          const elRect = el.getBoundingClientRect();
-                          setCoords({
-                            left: elRect.left - containerRect.left,
-                            width: elRect.width,
-                          });
-                        }
-                      }}
-                      ref={(el) => {
-                        itemRefs.current[item.id] = el;
-                      }}
-                      className={cn(
-                        "relative z-10 rounded-full px-6 py-2 text-sm font-semibold transition-colors duration-300",
-                        active
-                          ? "text-white"
-                          : "text-muted-foreground hover:text-foreground"
-                      )}
-                    >
-                      {item.label}
-                    </Link>
-                  );
-                })}
-              </nav>
+                    ref={(el) => {
+                      itemRefs.current[item.id] = el;
+                    }}
+                    className={cn(
+                      "relative z-10 rounded-full px-6 py-2 text-sm font-semibold transition-colors duration-300",
+                      active ? "text-white" : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </nav>
 
             <div className="ml-auto flex items-center gap-6">
               <div className="hidden sm:flex items-center gap-2">

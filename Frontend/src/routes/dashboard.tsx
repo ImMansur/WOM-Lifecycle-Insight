@@ -3,7 +3,15 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { Recommendation } from "@/lib/wom-data";
 import { groupSerialsByPart } from "@/lib/wom-data";
-import { fetchRecommendations, ingestFiles, confirmIngestUpdates, deleteRecommendation, deleteMultipleRecommendations, fetchActions, exportToExcel } from "@/lib/api";
+import {
+  fetchRecommendations,
+  ingestFiles,
+  confirmIngestUpdates,
+  deleteRecommendation,
+  deleteMultipleRecommendations,
+  fetchActions,
+  exportToExcel,
+} from "@/lib/api";
 import type { Action, PendingDuplicate } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { StatusBadge, PriorityChip } from "@/components/wom/StatusBadge";
@@ -78,7 +86,7 @@ export const Route = createFileRoute("/dashboard")({
   validateSearch: (search: Record<string, unknown>) => ({
     tab: (search.tab as string | undefined) ?? "Home",
     q: (search.q as string | undefined) ?? "",
-    filter: (search.filter as FilterKey | undefined) ?? "all" as FilterKey,
+    filter: (search.filter as FilterKey | undefined) ?? ("all" as FilterKey),
     time: (search.time as string | undefined) ?? "all",
     priority: (search.priority as string | undefined) ?? "all",
     clients: (search.clients as string | undefined) ?? "",
@@ -125,9 +133,7 @@ function UploadDialog({
         // a corrected version of an existing CoC).
         setPendingDuplicates(data.pendingDuplicates);
         setDecisions(
-          Object.fromEntries(
-            data.pendingDuplicates.map((d) => [d.existingId, "replace" as const]),
-          ),
+          Object.fromEntries(data.pendingDuplicates.map((d) => [d.existingId, "replace" as const])),
         );
         setFiles([]); // file list no longer relevant
       } else {
@@ -168,17 +174,14 @@ function UploadDialog({
   };
 
   const addFiles = (incoming: FileList | File[]) => {
-    const filtered = Array.from(incoming).filter((f) =>
-      /\.(pdf|doc|docx)$/i.test(f.name)
-    );
+    const filtered = Array.from(incoming).filter((f) => /\.(pdf|doc|docx)$/i.test(f.name));
     setFiles((prev) => {
       const names = new Set(prev.map((f) => f.name));
       return [...prev, ...filtered.filter((f) => !names.has(f.name))];
     });
   };
 
-  const removeFile = (name: string) =>
-    setFiles((prev) => prev.filter((f) => f.name !== name));
+  const removeFile = (name: string) => setFiles((prev) => prev.filter((f) => f.name !== name));
 
   return (
     <Dialog
@@ -212,9 +215,8 @@ function UploadDialog({
                   </span>
                 )}
                 {pendingDuplicates.length} uploaded file
-                {pendingDuplicates.length !== 1 ? "s match" : " matches"} an existing record
-                (same customer, sales order, and certificate date). Choose what
-                to do with each one.
+                {pendingDuplicates.length !== 1 ? "s match" : " matches"} an existing record (same
+                customer, sales order, and certificate date). Choose what to do with each one.
               </DialogDescription>
             </DialogHeader>
 
@@ -228,11 +230,15 @@ function UploadDialog({
                         <p className="text-xs text-muted-foreground uppercase tracking-wide font-semibold">
                           Existing record
                         </p>
-                        <p className="font-mono text-xs text-foreground truncate" title={d.existingFile}>
+                        <p
+                          className="font-mono text-xs text-foreground truncate"
+                          title={d.existingFile}
+                        >
                           {d.existingFile}
                         </p>
                         <p className="text-xs text-muted-foreground mt-0.5">
-                          {d.existingCustomer ?? "—"} · SO {d.existingSalesOrder ?? "—"} · {d.existingCertificateDate ?? "—"}
+                          {d.existingCustomer ?? "—"} · SO {d.existingSalesOrder ?? "—"} ·{" "}
+                          {d.existingCertificateDate ?? "—"}
                         </p>
                       </div>
                     </div>
@@ -241,7 +247,10 @@ function UploadDialog({
                         <p className="text-xs text-muted-foreground uppercase tracking-wide font-semibold">
                           New upload
                         </p>
-                        <p className="font-mono text-xs text-foreground truncate" title={d.newRecommendation.sourceFile}>
+                        <p
+                          className="font-mono text-xs text-foreground truncate"
+                          title={d.newRecommendation.sourceFile}
+                        >
                           {d.newRecommendation.sourceFile}
                         </p>
                       </div>
@@ -249,25 +258,23 @@ function UploadDialog({
                     <div className="flex gap-2 pt-1">
                       <button
                         type="button"
-                        onClick={() =>
-                          setDecisions((p) => ({ ...p, [d.existingId]: "replace" }))
-                        }
-                        className={`flex-1 rounded-md border px-2 py-1.5 text-xs font-semibold transition-colors ${decision === "replace"
-                          ? "border-accent bg-accent text-accent-foreground"
-                          : "border-border/60 bg-background/40 text-muted-foreground hover:border-accent/50"
-                          }`}
+                        onClick={() => setDecisions((p) => ({ ...p, [d.existingId]: "replace" }))}
+                        className={`flex-1 rounded-md border px-2 py-1.5 text-xs font-semibold transition-colors ${
+                          decision === "replace"
+                            ? "border-accent bg-accent text-accent-foreground"
+                            : "border-border/60 bg-background/40 text-muted-foreground hover:border-accent/50"
+                        }`}
                       >
                         Replace existing
                       </button>
                       <button
                         type="button"
-                        onClick={() =>
-                          setDecisions((p) => ({ ...p, [d.existingId]: "skip" }))
-                        }
-                        className={`flex-1 rounded-md border px-2 py-1.5 text-xs font-semibold transition-colors ${decision === "skip"
-                          ? "border-destructive bg-destructive/10 text-destructive"
-                          : "border-border/60 bg-background/40 text-muted-foreground hover:border-destructive/50"
-                          }`}
+                        onClick={() => setDecisions((p) => ({ ...p, [d.existingId]: "skip" }))}
+                        className={`flex-1 rounded-md border px-2 py-1.5 text-xs font-semibold transition-colors ${
+                          decision === "skip"
+                            ? "border-destructive bg-destructive/10 text-destructive"
+                            : "border-border/60 bg-background/40 text-muted-foreground hover:border-destructive/50"
+                        }`}
                       >
                         Skip new upload
                       </button>
@@ -326,14 +333,17 @@ function UploadDialog({
                 Ingest Documents
               </DialogTitle>
               <DialogDescription className="text-muted-foreground text-sm">
-                Upload PDF, DOC, or DOCX certificates of conformance. Each file is
-                processed through Document Intelligence and the AI Extraction Engine.
+                Upload PDF, DOC, or DOCX certificates of conformance. Each file is processed through
+                Document Intelligence and the AI Extraction Engine.
               </DialogDescription>
             </DialogHeader>
 
             {/* Drop zone */}
             <div
-              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDragOver(true);
+              }}
               onDragLeave={() => setDragOver(false)}
               onDrop={(e) => {
                 e.preventDefault();
@@ -341,17 +351,20 @@ function UploadDialog({
                 addFiles(e.dataTransfer.files);
               }}
               onClick={() => inputRef.current?.click()}
-              className={`mt-2 flex cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed py-10 transition-colors ${dragOver
-                ? "border-primary bg-primary/5"
-                : "border-border/60 bg-background/20 hover:border-primary/50 hover:bg-primary/5"
-                }`}
+              className={`mt-2 flex cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed py-10 transition-colors ${
+                dragOver
+                  ? "border-primary bg-primary/5"
+                  : "border-border/60 bg-background/20 hover:border-primary/50 hover:bg-primary/5"
+              }`}
             >
               <CloudUpload className="size-10 text-muted-foreground/50" />
               <div className="text-center">
                 <p className="text-sm font-semibold text-foreground">
                   Drop files here or click to browse
                 </p>
-                <p className="mt-1 text-xs text-muted-foreground">PDF, DOC, DOCX — up to 200 MB each</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  PDF, DOC, DOCX — up to 200 MB each
+                </p>
               </div>
               <input
                 ref={inputRef}
@@ -376,7 +389,10 @@ function UploadDialog({
                       {(f.size / 1024 / 1024).toFixed(1)} MB
                     </span>
                     <button
-                      onClick={(e) => { e.stopPropagation(); removeFile(f.name); }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeFile(f.name);
+                      }}
                       className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-destructive transition-colors"
                     >
                       <X className="size-3.5" />
@@ -396,7 +412,9 @@ function UploadDialog({
             {/* Partial errors from API */}
             {mutation.isSuccess && mutation.data.errors.length > 0 && (
               <div className="mt-2 space-y-1 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2.5 text-xs text-warning">
-                {mutation.data.errors.map((e, i) => <p key={i}>{e}</p>)}
+                {mutation.data.errors.map((e, i) => (
+                  <p key={i}>{e}</p>
+                ))}
               </div>
             )}
 
@@ -404,7 +422,10 @@ function UploadDialog({
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => { onOpenChange(false); setFiles([]); }}
+                onClick={() => {
+                  onOpenChange(false);
+                  setFiles([]);
+                }}
                 disabled={mutation.isPending}
               >
                 Cancel
@@ -439,8 +460,25 @@ function UploadDialog({
 
 // ─── Confidence score ────────────────────────────────────────────────────────
 
-function getConfidenceScore(r: { confidence: string; extractionStatus: string; customer: string | null; equipment: string | null; recertificationDue: string | null; salesOrder: string | null; purchaseOrder: string | null; certificateDate: string | null; location: string | null }): number {
-  const keyFields = [r.customer, r.equipment, r.recertificationDue, r.salesOrder ?? r.purchaseOrder, r.certificateDate, r.location];
+function getConfidenceScore(r: {
+  confidence: string;
+  extractionStatus: string;
+  customer: string | null;
+  equipment: string | null;
+  recertificationDue: string | null;
+  salesOrder: string | null;
+  purchaseOrder: string | null;
+  certificateDate: string | null;
+  location: string | null;
+}): number {
+  const keyFields = [
+    r.customer,
+    r.equipment,
+    r.recertificationDue,
+    r.salesOrder ?? r.purchaseOrder,
+    r.certificateDate,
+    r.location,
+  ];
   const missingCount = keyFields.filter((f) => !f).length;
   const base = r.confidence === "High" ? 90 : 65;
   const ocrPenalty = r.extractionStatus !== "OK" ? 20 : 0;
@@ -462,7 +500,9 @@ function Dashboard() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [page, setPage] = useState(0);
-  const [sortKey, setSortKey] = useState<"priority" | "customer" | "recertDue" | "status" | null>(null);
+  const [sortKey, setSortKey] = useState<"priority" | "customer" | "recertDue" | "status" | null>(
+    null,
+  );
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
   // ── All filter state lives in the URL ─────────────────────────────────────
@@ -471,12 +511,17 @@ function Dashboard() {
   const query = search.q;
   const recTimeFilter = search.time as TimeFilter;
   const recPriorityFilter = search.priority as PriorityFilter;
-  const recClients = search.clients ? search.clients.split("|") : [] as string[];
-  const recLocations = search.locations ? search.locations.split("|") : [] as string[];
-  const recParts = search.parts ? search.parts.split("|") : [] as string[];
+  const recClients = search.clients ? search.clients.split("|") : ([] as string[]);
+  const recLocations = search.locations ? search.locations.split("|") : ([] as string[]);
+  const recParts = search.parts ? search.parts.split("|") : ([] as string[]);
 
   const setSearch = (patch: Partial<typeof search>) =>
-    navigate({ to: "/dashboard", search: (prev: typeof search) => ({ ...prev, ...patch }), replace: true, resetScroll: false });
+    navigate({
+      to: "/dashboard",
+      search: (prev: typeof search) => ({ ...prev, ...patch }),
+      replace: true,
+      resetScroll: false,
+    });
 
   const setActiveTab = (v: string) => setSearch({ tab: v });
   const setFilter = (v: FilterKey) => setSearch({ filter: v });
@@ -559,12 +604,14 @@ function Dashboard() {
       } else if (recTimeFilter === "6m") {
         if (r.monthsToRecert === null || r.monthsToRecert > 6 || r.monthsToRecert < 0) return false;
       } else if (recTimeFilter === "12m") {
-        if (r.monthsToRecert === null || r.monthsToRecert > 12 || r.monthsToRecert < 0) return false;
+        if (r.monthsToRecert === null || r.monthsToRecert > 12 || r.monthsToRecert < 0)
+          return false;
       }
       if (recPriorityFilter !== "all" && r.priority !== recPriorityFilter) return false;
       if (recClients.length > 0 && !recClients.includes(r.customer ?? "")) return false;
       if (recLocations.length > 0 && !recLocations.includes(r.location ?? "")) return false;
-      if (recParts.length > 0 && !r.partNumbers.some((p) => recParts.includes(p.number))) return false;
+      if (recParts.length > 0 && !r.partNumbers.some((p) => recParts.includes(p.number)))
+        return false;
       return true;
     });
   }, [recommendations, recTimeFilter, recPriorityFilter, recClients, recLocations, recParts]);
@@ -596,36 +643,61 @@ function Dashboard() {
   const sortedRows = useMemo(() => {
     if (!sortKey) return tableRows;
     return [...tableRows].sort((a, b) => {
-      let av = "", bv = "";
+      let av = "",
+        bv = "";
       if (sortKey === "priority") {
-        const order = { "High": 0, "Manual review": 1, "Low": 2 };
+        const order = { High: 0, "Manual review": 1, Low: 2 };
         const ai = order[a.priority as keyof typeof order] ?? 9;
         const bi = order[b.priority as keyof typeof order] ?? 9;
         return sortDir === "asc" ? ai - bi : bi - ai;
       }
-      if (sortKey === "customer") { av = a.customer ?? ""; bv = b.customer ?? ""; }
-      else if (sortKey === "recertDue") { av = a.recertificationDue ?? "9999-12-31"; bv = b.recertificationDue ?? "9999-12-31"; }
-      else if (sortKey === "status") { av = a.status; bv = b.status; }
+      if (sortKey === "customer") {
+        av = a.customer ?? "";
+        bv = b.customer ?? "";
+      } else if (sortKey === "recertDue") {
+        av = a.recertificationDue ?? "9999-12-31";
+        bv = b.recertificationDue ?? "9999-12-31";
+      } else if (sortKey === "status") {
+        av = a.status;
+        bv = b.status;
+      }
       return sortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
     });
   }, [tableRows, sortKey, sortDir]);
 
   const totalPages = Math.max(1, Math.ceil(sortedRows.length / PAGE_SIZE));
-  const pagedRows = useMemo(() => sortedRows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE), [sortedRows, page]);
+  const pagedRows = useMemo(
+    () => sortedRows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE),
+    [sortedRows, page],
+  );
 
   // Reset to page 0 whenever filters or search change
-  useEffect(() => { setPage(0); }, [query, recTimeFilter, recPriorityFilter, recClients.join(), recLocations.join(), recParts.join()]);
+  useEffect(() => {
+    setPage(0);
+  }, [
+    query,
+    recTimeFilter,
+    recPriorityFilter,
+    recClients.join(),
+    recLocations.join(),
+    recParts.join(),
+  ]);
 
   function toggleSort(key: typeof sortKey) {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    else { setSortKey(key); setSortDir("asc"); }
+    else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
   }
 
   function SortIcon({ col }: { col: typeof sortKey }) {
     if (sortKey !== col) return <ChevronDown className="size-3 opacity-20" />;
-    return sortDir === "asc"
-      ? <ChevronUp className="size-3 text-primary" />
-      : <ChevronDown className="size-3 text-primary" />;
+    return sortDir === "asc" ? (
+      <ChevronUp className="size-3 text-primary" />
+    ) : (
+      <ChevronDown className="size-3 text-primary" />
+    );
   }
 
   function ExportButton({ ids }: { ids: string[] }) {
@@ -647,24 +719,26 @@ function Dashboard() {
         disabled={loading || !ids.length}
         className="inline-flex h-11 items-center gap-2 rounded-xl border border-border/40 bg-secondary/30 px-4 text-sm font-semibold text-foreground hover:bg-slate-100 hover:border-border transition-all disabled:opacity-40 disabled:cursor-not-allowed"
       >
-        {loading ? (
-          <Loader2 className="size-4 animate-spin" />
-        ) : (
-          <FileDown className="size-4" />
-        )}
-        Export Excel {ids.length > 0 && <span className="text-muted-foreground">({ids.length})</span>}
+        {loading ? <Loader2 className="size-4 animate-spin" /> : <FileDown className="size-4" />}
+        Export Excel{" "}
+        {ids.length > 0 && <span className="text-muted-foreground">({ids.length})</span>}
       </button>
     );
   }
 
-
   const recClientOptions = useMemo(
-    () => [...new Set(recommendations.map((r) => r.customer).filter(Boolean) as string[])].sort((a, b) => a.localeCompare(b)),
-    [recommendations]
+    () =>
+      [...new Set(recommendations.map((r) => r.customer).filter(Boolean) as string[])].sort(
+        (a, b) => a.localeCompare(b),
+      ),
+    [recommendations],
   );
   const recLocationOptions = useMemo(
-    () => [...new Set(recommendations.map((r) => r.location).filter(Boolean) as string[])].sort((a, b) => a.localeCompare(b)),
-    [recommendations]
+    () =>
+      [...new Set(recommendations.map((r) => r.location).filter(Boolean) as string[])].sort(
+        (a, b) => a.localeCompare(b),
+      ),
+    [recommendations],
   );
   const recPartOptions = useMemo(() => {
     const all = recommendations.flatMap((r) => r.partNumbers.map((p) => p.number));
@@ -676,7 +750,9 @@ function Dashboard() {
     const total = filtered.length;
     const high = filtered.filter((r) => r.priority === "High").length;
     const overdue = filtered.filter((r) => r.status === "Expired / overdue").length;
-    const dueSoon = filtered.filter((r) => r.monthsToRecert !== null && r.monthsToRecert >= 0 && r.monthsToRecert <= 6).length;
+    const dueSoon = filtered.filter(
+      (r) => r.monthsToRecert !== null && r.monthsToRecert >= 0 && r.monthsToRecert <= 6,
+    ).length;
     const customers = new Set(filtered.map((r) => r.customer).filter(Boolean)).size;
     const equipment = new Set(filtered.map((r) => r.equipment).filter(Boolean)).size;
     const parts = filtered.reduce((a, r) => a + r.partNumbers.length, 0);
@@ -694,8 +770,8 @@ function Dashboard() {
 
   return (
     <div className="w-full">
-      {activeTab === "Home" && (<>
-
+      {activeTab === "Home" && (
+        <>
           {/* ── Redesigned Compact Header Area ─────────────────────────── */}
           <section className="relative py-8 md:py-12 bg-gradient-to-b from-primary/5 to-transparent border-b border-border/30">
             <div className="mx-auto w-full max-w-[1600px] px-8">
@@ -706,22 +782,29 @@ function Dashboard() {
                     Lifecycle Intelligence Engine
                   </div>
                   <h1 className="font-display text-4xl font-black tracking-tight text-[#0D1117] sm:text-5xl">
-                    Proactive Lifecycle <span className="text-primary italic font-semibold">Recommendations</span>
+                    Proactive Lifecycle{" "}
+                    <span className="text-primary italic font-semibold">Recommendations</span>
                   </h1>
                   <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground/80 font-medium">
-                    Certificates of conformance parsed, structured, and matched against lifecycle rules. Discover service opportunities, generate quotes, or queue customer outreach.
+                    Certificates of conformance parsed, structured, and matched against lifecycle
+                    rules. Discover service opportunities, generate quotes, or queue customer
+                    outreach.
                   </p>
                 </div>
-                
+
                 {/* System Status Panel */}
                 <div className="bg-surface/60 backdrop-blur-md border border-border/40 p-5 rounded-2xl md:min-w-[320px] flex items-center gap-4 hover:shadow-lg transition-all hover:bg-surface/85 group">
                   <div className="flex size-12 items-center justify-center rounded-xl bg-primary/10 text-primary transition-transform group-hover:scale-105 shrink-0">
                     <Zap className="size-6 animate-pulse" />
                   </div>
                   <div className="space-y-1">
-                    <div className="text-xs font-semibold text-muted-foreground/60 uppercase tracking-widest">System Status</div>
+                    <div className="text-xs font-semibold text-muted-foreground/60 uppercase tracking-widest">
+                      System Status
+                    </div>
                     <div className="text-sm font-bold text-foreground">Active & Operating</div>
-                    <div className="text-[10px] text-muted-foreground/80 font-mono">Synced As Of: {summary.asOf || "Today"}</div>
+                    <div className="text-[10px] text-muted-foreground/80 font-mono">
+                      Synced As Of: {summary.asOf || "Today"}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -755,18 +838,76 @@ function Dashboard() {
             <div className="mx-auto w-full max-w-[1600px] px-8">
               <div className="flex items-center gap-6">
                 <div className="h-px flex-1 bg-border/40" />
-                <span className="font-display text-[11px] font-bold uppercase tracking-[0.3em] text-muted-foreground/40">Live Intelligence</span>
+                <span className="font-display text-[11px] font-bold uppercase tracking-[0.3em] text-muted-foreground/40">
+                  Live Intelligence
+                </span>
                 <div className="h-px flex-1 bg-border/40" />
               </div>
               <div className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                <MetricCard icon={<FileText className="size-5" />} label="Total Records" value={isLoading ? "—" : recMetrics.total} sub={`${recommendations.length} total ingested`} tone="default" />
-                <MetricCard icon={<ShieldAlert className="size-5" />} label="High Priority" value={isLoading ? "—" : recMetrics.high} sub={recMetrics.total > 0 ? `${Math.round((recMetrics.high / recMetrics.total) * 100)}% of filtered` : "No records"} tone="danger" trend={recMetrics.high > 0 ? "up" : "neutral"} />
-                <MetricCard icon={<AlertTriangle className="size-5" />} label="Overdue" value={isLoading ? "—" : recMetrics.overdue} sub="Recertification expired" tone="danger" trend={recMetrics.overdue > 0 ? "up" : "neutral"} />
-                <MetricCard icon={<Clock className="size-5" />} label="Due ≤6 Months" value={isLoading ? "—" : recMetrics.dueSoon} sub="Upcoming recertification" tone="warning" trend={recMetrics.dueSoon > 0 ? "up" : "neutral"} />
-                <MetricCard icon={<Users className="size-5" />} label="Active Customers" value={isLoading ? "—" : recMetrics.customers} sub="Unique customers on file" tone="default" />
-                <MetricCard icon={<Wrench className="size-5" />} label="Equipment Types" value={isLoading ? "—" : recMetrics.equipment} sub="Distinct equipment entries" tone="default" />
-                <MetricCard icon={<Package className="size-5" />} label="Part Numbers" value={isLoading ? "—" : recMetrics.parts} sub="Across all certificates" tone="default" />
-                <MetricCard icon={<Zap className="size-5" />} label="Extraction Accuracy" value={isLoading ? "—" : `${recMetrics.extractionRate}%`} sub={`${filtered.filter(r => r.confidence === "High").length} high-confidence records`} tone="success" trend={recMetrics.extractionRate >= 80 ? "up" : "neutral"} />
+                <MetricCard
+                  icon={<FileText className="size-5" />}
+                  label="Total Records"
+                  value={isLoading ? "—" : recMetrics.total}
+                  sub={`${recommendations.length} total ingested`}
+                  tone="default"
+                />
+                <MetricCard
+                  icon={<ShieldAlert className="size-5" />}
+                  label="High Priority"
+                  value={isLoading ? "—" : recMetrics.high}
+                  sub={
+                    recMetrics.total > 0
+                      ? `${Math.round((recMetrics.high / recMetrics.total) * 100)}% of filtered`
+                      : "No records"
+                  }
+                  tone="danger"
+                  trend={recMetrics.high > 0 ? "up" : "neutral"}
+                />
+                <MetricCard
+                  icon={<AlertTriangle className="size-5" />}
+                  label="Overdue"
+                  value={isLoading ? "—" : recMetrics.overdue}
+                  sub="Recertification expired"
+                  tone="danger"
+                  trend={recMetrics.overdue > 0 ? "up" : "neutral"}
+                />
+                <MetricCard
+                  icon={<Clock className="size-5" />}
+                  label="Due ≤6 Months"
+                  value={isLoading ? "—" : recMetrics.dueSoon}
+                  sub="Upcoming recertification"
+                  tone="warning"
+                  trend={recMetrics.dueSoon > 0 ? "up" : "neutral"}
+                />
+                <MetricCard
+                  icon={<Users className="size-5" />}
+                  label="Active Customers"
+                  value={isLoading ? "—" : recMetrics.customers}
+                  sub="Unique customers on file"
+                  tone="default"
+                />
+                <MetricCard
+                  icon={<Wrench className="size-5" />}
+                  label="Equipment Types"
+                  value={isLoading ? "—" : recMetrics.equipment}
+                  sub="Distinct equipment entries"
+                  tone="default"
+                />
+                <MetricCard
+                  icon={<Package className="size-5" />}
+                  label="Part Numbers"
+                  value={isLoading ? "—" : recMetrics.parts}
+                  sub="Across all certificates"
+                  tone="default"
+                />
+                <MetricCard
+                  icon={<Zap className="size-5" />}
+                  label="Extraction Accuracy"
+                  value={isLoading ? "—" : `${recMetrics.extractionRate}%`}
+                  sub={`${filtered.filter((r) => r.confidence === "High").length} high-confidence records`}
+                  tone="success"
+                  trend={recMetrics.extractionRate >= 80 ? "up" : "neutral"}
+                />
               </div>
             </div>
 
@@ -774,7 +915,9 @@ function Dashboard() {
             <div className="mx-auto w-full max-w-[1600px] px-8 pt-20">
               <div className="mb-10 flex items-center gap-6">
                 <div className="h-px flex-1 bg-border/40" />
-                <span className="font-display text-[11px] font-bold uppercase tracking-[0.3em] text-muted-foreground/40">Analytics</span>
+                <span className="font-display text-[11px] font-bold uppercase tracking-[0.3em] text-muted-foreground/40">
+                  Analytics
+                </span>
                 <div className="h-px flex-1 bg-border/40" />
               </div>
               <ChartsSection filtered={filtered} />
@@ -785,7 +928,9 @@ function Dashboard() {
               {/* Divider + label */}
               <div className="mb-10 flex items-center gap-6">
                 <div className="h-px flex-1 bg-border/40" />
-                <span className="font-display text-[11px] font-bold uppercase tracking-[0.3em] text-muted-foreground/40">Records</span>
+                <span className="font-display text-[11px] font-bold uppercase tracking-[0.3em] text-muted-foreground/40">
+                  Records
+                </span>
                 <div className="h-px flex-1 bg-border/40" />
               </div>
 
@@ -827,7 +972,9 @@ function Dashboard() {
                       </button>
                     </>
                   )}
-                  <ExportButton ids={selectedIds.size > 0 ? [...selectedIds] : sortedRows.map((r) => r.id)} />
+                  <ExportButton
+                    ids={selectedIds.size > 0 ? [...selectedIds] : sortedRows.map((r) => r.id)}
+                  />
                 </div>
               </div>
 
@@ -837,10 +984,14 @@ function Dashboard() {
                 <div className="grid grid-cols-[40px_8px_100px_1.5fr_1.4fr_1fr_1fr_130px_160px_48px] items-center gap-4 border-b border-border/30 bg-secondary/30 px-6 py-5 text-[11px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70">
                   <div className="flex items-center justify-center">
                     <Checkbox
-                      checked={pagedRows.length > 0 && pagedRows.every((r) => selectedIds.has(r.id))}
+                      checked={
+                        pagedRows.length > 0 && pagedRows.every((r) => selectedIds.has(r.id))
+                      }
                       onCheckedChange={(checked) => {
                         if (checked) {
-                          setSelectedIds((prev) => new Set([...prev, ...pagedRows.map((r) => r.id)]));
+                          setSelectedIds(
+                            (prev) => new Set([...prev, ...pagedRows.map((r) => r.id)]),
+                          );
                         } else {
                           setSelectedIds((prev) => {
                             const next = new Set(prev);
@@ -853,12 +1004,32 @@ function Dashboard() {
                     />
                   </div>
                   <div /> {/* accent-bar spacer */}
-                  <button onClick={() => toggleSort("priority")} className="flex items-center gap-1 hover:text-foreground transition-colors">Priority <SortIcon col="priority" /></button>
-                  <button onClick={() => toggleSort("customer")} className="flex items-center gap-1 hover:text-foreground transition-colors">Customer <SortIcon col="customer" /></button>
+                  <button
+                    onClick={() => toggleSort("priority")}
+                    className="flex items-center gap-1 hover:text-foreground transition-colors"
+                  >
+                    Priority <SortIcon col="priority" />
+                  </button>
+                  <button
+                    onClick={() => toggleSort("customer")}
+                    className="flex items-center gap-1 hover:text-foreground transition-colors"
+                  >
+                    Customer <SortIcon col="customer" />
+                  </button>
                   <div>Equipment</div>
                   <div>SO / PO</div>
-                  <button onClick={() => toggleSort("recertDue")} className="flex items-center gap-1 hover:text-foreground transition-colors">Recert. Due <SortIcon col="recertDue" /></button>
-                  <button onClick={() => toggleSort("status")} className="flex items-center gap-1 hover:text-foreground transition-colors">Status <SortIcon col="status" /></button>
+                  <button
+                    onClick={() => toggleSort("recertDue")}
+                    className="flex items-center gap-1 hover:text-foreground transition-colors"
+                  >
+                    Recert. Due <SortIcon col="recertDue" />
+                  </button>
+                  <button
+                    onClick={() => toggleSort("status")}
+                    className="flex items-center gap-1 hover:text-foreground transition-colors"
+                  >
+                    Status <SortIcon col="status" />
+                  </button>
                   <div>Client Updates</div>
                   <div />
                 </div>
@@ -888,7 +1059,9 @@ function Dashboard() {
                           uvicorn main:app --reload
                         </code>
                       </p>
-                      <p className="mt-2 font-mono text-xs text-destructive/60">{(error as Error).message}</p>
+                      <p className="mt-2 font-mono text-xs text-destructive/60">
+                        {(error as Error).message}
+                      </p>
                     </div>
                   </div>
                 )}
@@ -906,7 +1079,11 @@ function Dashboard() {
                       </p>
                     </div>
                     {user?.role !== "Analysis" && (
-                      <Button size="sm" onClick={() => navigate({ to: "/upload" })} className="mt-1 bg-accent text-accent-foreground font-bold hover:bg-accent/90">
+                      <Button
+                        size="sm"
+                        onClick={() => navigate({ to: "/upload" })}
+                        className="mt-1 bg-accent text-accent-foreground font-bold hover:bg-accent/90"
+                      >
                         <Upload className="mr-2 size-4" />
                         Upload documents
                       </Button>
@@ -922,7 +1099,9 @@ function Dashboard() {
                     </div>
                     <div>
                       <p className="font-semibold text-foreground">No records match your filters</p>
-                      <p className="mt-1 text-sm text-muted-foreground">Try adjusting or clearing filters above.</p>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        Try adjusting or clearing filters above.
+                      </p>
                     </div>
                   </div>
                 )}
@@ -931,15 +1110,19 @@ function Dashboard() {
                 <div className="divide-y divide-border/25">
                   {pagedRows.map((r) => {
                     const overdue = r.status === "Expired / overdue";
-                    const dueSoon = r.monthsToRecert !== null && r.monthsToRecert >= 0 && r.monthsToRecert <= 3;
+                    const dueSoon =
+                      r.monthsToRecert !== null && r.monthsToRecert >= 0 && r.monthsToRecert <= 3;
                     const ocr = r.extractionStatus !== "OK";
                     // Row needs urgent human review: extraction failed AND admin hasn't reviewed yet
-                    const needsReviewAsap = !r.humanReviewed && (ocr || !r.customer || r.priority === "Manual review");
-                    const accentColor =
-                      needsReviewAsap ? "bg-amber-500"
-                        : r.priority === "High" ? "bg-destructive"
-                          : r.priority === "Low" ? "bg-emerald-500"
-                            : "bg-muted-foreground/30";
+                    const needsReviewAsap =
+                      !r.humanReviewed && (ocr || !r.customer || r.priority === "Manual review");
+                    const accentColor = needsReviewAsap
+                      ? "bg-amber-500"
+                      : r.priority === "High"
+                        ? "bg-destructive"
+                        : r.priority === "Low"
+                          ? "bg-emerald-500"
+                          : "bg-muted-foreground/30";
                     return (
                       <div
                         key={r.id}
@@ -950,13 +1133,17 @@ function Dashboard() {
                         className={`group grid w-full grid-cols-[40px_8px_100px_1.5fr_1.4fr_1fr_1fr_130px_160px_48px] items-start gap-4 px-6 py-5 text-left transition-all duration-200 hover:bg-secondary/20 cursor-pointer ${selectedIds.has(r.id) ? "bg-primary/5" : ""} ${needsReviewAsap ? "bg-amber-50/60 hover:bg-amber-50/80 ring-1 ring-inset ring-amber-400/30" : ""}`}
                       >
                         {/* Checkbox */}
-                        <div className="flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+                        <div
+                          className="flex items-center justify-center"
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           <Checkbox
                             checked={selectedIds.has(r.id)}
                             onCheckedChange={(checked) => {
                               setSelectedIds((prev) => {
                                 const next = new Set(prev);
-                                if (checked) next.add(r.id); else next.delete(r.id);
+                                if (checked) next.add(r.id);
+                                else next.delete(r.id);
                                 return next;
                               });
                             }}
@@ -964,13 +1151,17 @@ function Dashboard() {
                           />
                         </div>
                         {/* Priority accent bar */}
-                        <div className={`h-10 w-1.5 rounded-full ${accentColor} opacity-60 transition-all group-hover:opacity-100 group-hover:scale-y-110`} />
+                        <div
+                          className={`h-10 w-1.5 rounded-full ${accentColor} opacity-60 transition-all group-hover:opacity-100 group-hover:scale-y-110`}
+                        />
 
                         {/* Priority chip */}
                         <div>
-                          {r.humanReviewed && r.priority === "Manual review"
-                            ? <span className="font-mono text-xs text-muted-foreground/40">—</span>
-                            : <PriorityChip priority={r.priority} />}
+                          {r.humanReviewed && r.priority === "Manual review" ? (
+                            <span className="font-mono text-xs text-muted-foreground/40">—</span>
+                          ) : (
+                            <PriorityChip priority={r.priority} />
+                          )}
                         </div>
 
                         {/* Customer */}
@@ -979,7 +1170,9 @@ function Dashboard() {
                             <div className="flex flex-col gap-0.5">
                               <div className="flex items-center gap-1.5">
                                 <AlertTriangle className="size-3.5 text-amber-600 shrink-0" />
-                                <span className="text-sm font-bold text-amber-700 truncate">Human review needed ASAP</span>
+                                <span className="text-sm font-bold text-amber-700 truncate">
+                                  Human review needed ASAP
+                                </span>
                               </div>
                               <div className="font-mono text-[10px] font-semibold text-amber-600/70 uppercase tracking-wide truncate pl-5">
                                 {r.sourceFile}
@@ -988,7 +1181,11 @@ function Dashboard() {
                           ) : (
                             <>
                               <div className="truncate text-sm font-bold text-[#0D1117] transition-colors group-hover:text-primary">
-                                {r.customer ?? <span className="italic font-normal text-muted-foreground">Pending OCR</span>}
+                                {r.customer ?? (
+                                  <span className="italic font-normal text-muted-foreground">
+                                    Pending OCR
+                                  </span>
+                                )}
                               </div>
                               <div className="mt-1 truncate text-[11px] font-semibold text-muted-foreground/50 uppercase tracking-wide flex items-center gap-1.5">
                                 {r.location && <MapPin className="size-3" />}
@@ -1008,17 +1205,25 @@ function Dashboard() {
                           return (
                             <div className="min-w-0 space-y-1">
                               {/* 1. Equipment name — highlighted. When missing, promote first part number as title */}
-                              <div className="truncate text-sm font-semibold text-foreground" title={r.equipment ?? groups[0]?.part.number ?? undefined}>
-                                {r.equipment ?? (
-                                  groups.length > 0 ? (
+                              <div
+                                className="truncate text-sm font-semibold text-foreground"
+                                title={r.equipment ?? groups[0]?.part.number ?? undefined}
+                              >
+                                {r.equipment ??
+                                  (groups.length > 0 ? (
                                     <span className="font-mono">
                                       {groups[0].part.number}
-                                      {groups.length > 1 && <span className="font-sans text-muted-foreground/70">, ...</span>}
+                                      {groups.length > 1 && (
+                                        <span className="font-sans text-muted-foreground/70">
+                                          , ...
+                                        </span>
+                                      )}
                                     </span>
                                   ) : (
-                                    <span className="text-[10px] font-normal text-muted-foreground/50">—</span>
-                                  )
-                                )}
+                                    <span className="text-[10px] font-normal text-muted-foreground/50">
+                                      —
+                                    </span>
+                                  ))}
                               </div>
 
                               {/* 2. Qty × Part No rows */}
@@ -1030,11 +1235,16 @@ function Dashboard() {
                                       className="inline-flex items-center gap-1 rounded-md border border-border/50 bg-secondary/40 px-1.5 py-px font-mono text-[9px] text-foreground"
                                     >
                                       {g.part.qty != null && (
-                                        <span className="font-bold text-primary">{g.part.qty}×</span>
+                                        <span className="font-bold text-primary">
+                                          {g.part.qty}×
+                                        </span>
                                       )}
                                       {g.part.number}
                                       {g.serials.length > 0 && (
-                                        <span className="ml-0.5 text-muted-foreground/60">#{g.serials[0]}{g.serials.length > 1 ? ` +${g.serials.length - 1}` : ""}</span>
+                                        <span className="ml-0.5 text-muted-foreground/60">
+                                          #{g.serials[0]}
+                                          {g.serials.length > 1 ? ` +${g.serials.length - 1}` : ""}
+                                        </span>
                                       )}
                                     </span>
                                   ))}
@@ -1057,26 +1267,42 @@ function Dashboard() {
                                       >
                                         <div className="mb-2 flex items-center justify-between text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
                                           <span>{r.equipment ?? "Parts & Serials"}</span>
-                                          <span>{groups.length} parts · {totalSerials} serials</span>
+                                          <span>
+                                            {groups.length} parts · {totalSerials} serials
+                                          </span>
                                         </div>
                                         <div className="max-h-72 space-y-1.5 overflow-y-auto pr-1">
                                           {groups.map((g) => (
-                                            <div key={g.part.number} className="rounded border border-border/60 bg-muted/30 p-2">
+                                            <div
+                                              key={g.part.number}
+                                              className="rounded border border-border/60 bg-muted/30 p-2"
+                                            >
                                               {/* Qty × Part No — Description */}
                                               <div className="flex flex-wrap items-baseline gap-x-1.5">
                                                 {g.part.qty != null && (
-                                                  <span className="rounded bg-primary/15 px-1 py-0.5 font-mono text-[9px] font-bold text-primary">{g.part.qty}×</span>
+                                                  <span className="rounded bg-primary/15 px-1 py-0.5 font-mono text-[9px] font-bold text-primary">
+                                                    {g.part.qty}×
+                                                  </span>
                                                 )}
-                                                <span className="font-mono text-xs font-semibold text-foreground">{g.part.number}</span>
+                                                <span className="font-mono text-xs font-semibold text-foreground">
+                                                  {g.part.number}
+                                                </span>
                                                 {g.part.description && (
-                                                  <span className="text-[10px] text-muted-foreground">— {g.part.description}</span>
+                                                  <span className="text-[10px] text-muted-foreground">
+                                                    — {g.part.description}
+                                                  </span>
                                                 )}
                                               </div>
                                               {/* Serials */}
                                               {g.serials.length > 0 && (
                                                 <div className="mt-1 flex flex-wrap gap-0.5">
                                                   {g.serials.map((s) => (
-                                                    <span key={s} className="rounded border border-border/40 bg-background px-1 py-px font-mono text-[9px] text-muted-foreground">{s}</span>
+                                                    <span
+                                                      key={s}
+                                                      className="rounded border border-border/40 bg-background px-1 py-px font-mono text-[9px] text-muted-foreground"
+                                                    >
+                                                      {s}
+                                                    </span>
                                                   ))}
                                                 </div>
                                               )}
@@ -1084,10 +1310,17 @@ function Dashboard() {
                                           ))}
                                           {unattributedSerials.length > 0 && (
                                             <div className="rounded border border-dashed border-border/50 bg-muted/20 p-2">
-                                              <div className="mb-1 text-[9px] font-semibold uppercase text-muted-foreground">Other serials</div>
+                                              <div className="mb-1 text-[9px] font-semibold uppercase text-muted-foreground">
+                                                Other serials
+                                              </div>
                                               <div className="flex flex-wrap gap-0.5">
                                                 {unattributedSerials.map((s) => (
-                                                  <span key={s} className="rounded border border-border/40 bg-background px-1 py-px font-mono text-[9px] text-muted-foreground">{s}</span>
+                                                  <span
+                                                    key={s}
+                                                    className="rounded border border-border/40 bg-background px-1 py-px font-mono text-[9px] text-muted-foreground"
+                                                  >
+                                                    {s}
+                                                  </span>
                                                 ))}
                                               </div>
                                             </div>
@@ -1105,17 +1338,28 @@ function Dashboard() {
                         {/* SO / PO */}
                         <div className="font-mono text-xs">
                           <div className="font-medium text-foreground">{r.salesOrder ?? "—"}</div>
-                          <div className="mt-0.5 text-[10px] text-muted-foreground/60">{r.purchaseOrder ?? "—"}</div>
+                          <div className="mt-0.5 text-[10px] text-muted-foreground/60">
+                            {r.purchaseOrder ?? "—"}
+                          </div>
                         </div>
 
                         {/* Recert date */}
                         <div className="font-mono text-xs">
-                          <div className={overdue ? "font-bold text-destructive" : dueSoon ? "font-bold text-warning" : "font-medium text-foreground"}>
+                          <div
+                            className={
+                              overdue
+                                ? "font-bold text-destructive"
+                                : dueSoon
+                                  ? "font-bold text-warning"
+                                  : "font-medium text-foreground"
+                            }
+                          >
                             {r.recertificationDue ?? "—"}
                           </div>
                           <div className="mt-0.5 text-[10px] text-muted-foreground/60">
                             {r.monthsToRecert !== null
-                              ? r.monthsToRecert < 0 ? `${Math.abs(r.monthsToRecert)} mo overdue`
+                              ? r.monthsToRecert < 0
+                                ? `${Math.abs(r.monthsToRecert)} mo overdue`
                                 : `in ${r.monthsToRecert} mo`
                               : "—"}
                           </div>
@@ -1129,12 +1373,18 @@ function Dashboard() {
                               if (r.monthsToRecert !== null) {
                                 // Recompute from stored monthsToRecert
                                 if (r.monthsToRecert < 0) displayStatus = "Expired / overdue";
-                                else if (r.monthsToRecert <= 12) displayStatus = "Due within 12 months";
-                                else if (r.monthsToRecert <= 24) displayStatus = "Mid-cycle service opportunity";
+                                else if (r.monthsToRecert <= 12)
+                                  displayStatus = "Due within 12 months";
+                                else if (r.monthsToRecert <= 24)
+                                  displayStatus = "Mid-cycle service opportunity";
                                 else displayStatus = "Within lifecycle";
                               } else {
                                 // No date — show null
-                                return <span className="font-mono text-xs text-muted-foreground/40">—</span>;
+                                return (
+                                  <span className="font-mono text-xs text-muted-foreground/40">
+                                    —
+                                  </span>
+                                );
                               }
                             }
                             return <StatusBadge status={displayStatus} />;
@@ -1142,48 +1392,98 @@ function Dashboard() {
                           {r.humanReviewed ? (
                             <div className="flex items-center gap-1.5 mt-0.5">
                               <span className="size-1.5 rounded-full bg-sky-500" />
-                              <span className="font-mono text-[9px] font-bold text-sky-600 uppercase tracking-wide">Reviewed by human</span>
+                              <span className="font-mono text-[9px] font-bold text-sky-600 uppercase tracking-wide">
+                                Reviewed by human
+                              </span>
                             </div>
-                          ) : (() => {
-                            const score = getConfidenceScore(r);
-                            const color = score >= 80 ? "text-emerald-500" : score >= 60 ? "text-orange-400" : "text-red-400";
-                            const bar   = score >= 80 ? "bg-emerald-500"   : score >= 60 ? "bg-orange-400"   : "bg-red-400";
-                            const label = ocr ? " · OCR" : ` · ${r.confidence}`;
-                            return (
-                              <div className="flex items-center gap-1.5 mt-0.5" title={`Confidence: ${score}% — ${r.confidence}${ocr ? " (OCR document)" : ""}`}>
-                                <span className="font-mono text-[9px] text-muted-foreground/50 uppercase tracking-wide">Conf.</span>
-                                <div className="h-1 w-10 rounded-full bg-border/40 overflow-hidden">
-                                  <div className={cn("h-full rounded-full", bar)} style={{ width: `${score}%` }} />
+                          ) : (
+                            (() => {
+                              const score = getConfidenceScore(r);
+                              const color =
+                                score >= 80
+                                  ? "text-emerald-500"
+                                  : score >= 60
+                                    ? "text-orange-400"
+                                    : "text-red-400";
+                              const bar =
+                                score >= 80
+                                  ? "bg-emerald-500"
+                                  : score >= 60
+                                    ? "bg-orange-400"
+                                    : "bg-red-400";
+                              const label = ocr ? " · OCR" : ` · ${r.confidence}`;
+                              return (
+                                <div
+                                  className="flex items-center gap-1.5 mt-0.5"
+                                  title={`Confidence: ${score}% — ${r.confidence}${ocr ? " (OCR document)" : ""}`}
+                                >
+                                  <span className="font-mono text-[9px] text-muted-foreground/50 uppercase tracking-wide">
+                                    Conf.
+                                  </span>
+                                  <div className="h-1 w-10 rounded-full bg-border/40 overflow-hidden">
+                                    <div
+                                      className={cn("h-full rounded-full", bar)}
+                                      style={{ width: `${score}%` }}
+                                    />
+                                  </div>
+                                  <span className={cn("font-mono text-[9px] font-bold", color)}>
+                                    {score}%{label}
+                                  </span>
                                 </div>
-                                <span className={cn("font-mono text-[9px] font-bold", color)}>{score}%{label}</span>
-                              </div>
-                            );
-                          })()}
+                              );
+                            })()
+                          )}
                         </div>
 
                         {/* Updates */}
                         {(() => {
                           const linked = getLinkedAction(r.id);
-                          if (!linked) return <div className="text-[10px] text-muted-foreground/30 italic">—</div>;
-                          const meta: Record<string, { label: string; dot: string; badge: string }> = {
-                            in_progress: { label: "In Progress", dot: "bg-orange-500", badge: "text-orange-600 bg-orange-500/10 border-orange-500/25" },
-                            closed: { label: "Closed", dot: "bg-emerald-500", badge: "text-emerald-600 bg-emerald-500/10 border-emerald-500/25" },
-                            failed: { label: "Failed", dot: "bg-red-500", badge: "text-red-600 bg-red-500/10 border-red-500/25" },
+                          if (!linked)
+                            return (
+                              <div className="text-[10px] text-muted-foreground/30 italic">—</div>
+                            );
+                          const meta: Record<
+                            string,
+                            { label: string; dot: string; badge: string }
+                          > = {
+                            in_progress: {
+                              label: "In Progress",
+                              dot: "bg-orange-500",
+                              badge: "text-orange-600 bg-orange-500/10 border-orange-500/25",
+                            },
+                            closed: {
+                              label: "Closed",
+                              dot: "bg-emerald-500",
+                              badge: "text-emerald-600 bg-emerald-500/10 border-emerald-500/25",
+                            },
+                            failed: {
+                              label: "Failed",
+                              dot: "bg-red-500",
+                              badge: "text-red-600 bg-red-500/10 border-red-500/25",
+                            },
                           };
                           const m = meta[linked.status];
                           return (
                             <div className="flex flex-col gap-1.5">
                               {m && (
-                                <span className={`inline-flex w-fit items-center gap-1 rounded-full border px-1.5 py-px font-mono text-[9px] font-bold ${m.badge}`}>
-                                  <span className={`size-1.5 rounded-full ${m.dot}`} />{m.label}
+                                <span
+                                  className={`inline-flex w-fit items-center gap-1 rounded-full border px-1.5 py-px font-mono text-[9px] font-bold ${m.badge}`}
+                                >
+                                  <span className={`size-1.5 rounded-full ${m.dot}`} />
+                                  {m.label}
                                 </span>
                               )}
-                              {(() => { const n = linked.comments.filter((c) => c.type !== "ai_suggestion").length; return n > 0 ? (
-                                <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground/60">
-                                  <MessageSquare className="size-3" />
-                                  {n} comment{n !== 1 ? "s" : ""}
-                                </span>
-                              ) : null; })()}
+                              {(() => {
+                                const n = linked.comments.filter(
+                                  (c) => c.type !== "ai_suggestion",
+                                ).length;
+                                return n > 0 ? (
+                                  <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground/60">
+                                    <MessageSquare className="size-3" />
+                                    {n} comment{n !== 1 ? "s" : ""}
+                                  </span>
+                                ) : null;
+                              })()}
                             </div>
                           );
                         })()}
@@ -1191,7 +1491,10 @@ function Dashboard() {
                         {/* Actions */}
                         <div className="flex items-center justify-end gap-1">
                           <button
-                            onClick={(e) => { e.stopPropagation(); setDeleteId(r.id); }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDeleteId(r.id);
+                            }}
                             className="rounded-lg p-1.5 text-muted-foreground/30 opacity-0 transition-all group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive"
                             title="Delete"
                           >
@@ -1213,19 +1516,31 @@ function Dashboard() {
                     <div className="flex flex-wrap items-center gap-4">
                       <span>
                         Showing{" "}
-                        <span className="font-bold text-foreground">{page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, sortedRows.length)}</span>
-                        {" "}of{" "}
-                        <span className="font-bold text-foreground">{sortedRows.length}</span>
+                        <span className="font-bold text-foreground">
+                          {page * PAGE_SIZE + 1}–
+                          {Math.min((page + 1) * PAGE_SIZE, sortedRows.length)}
+                        </span>{" "}
+                        of <span className="font-bold text-foreground">{sortedRows.length}</span>
                         {sortedRows.length !== recommendations.length && (
-                          <span className="text-muted-foreground/50"> (filtered from {recommendations.length})</span>
+                          <span className="text-muted-foreground/50">
+                            {" "}
+                            (filtered from {recommendations.length})
+                          </span>
                         )}
                       </span>
                       <span className="size-1 rounded-full bg-border/60" />
-                      <span>Rule: <span className="font-mono font-bold text-primary">60-month recertification</span></span>
+                      <span>
+                        Rule:{" "}
+                        <span className="font-mono font-bold text-primary">
+                          60-month recertification
+                        </span>
+                      </span>
                       <span className="size-1 rounded-full bg-border/60" />
                       <span className="font-mono text-[10px] opacity-60">as of {summary.asOf}</span>
                     </div>
-                    <div className="font-mono text-[10px] uppercase tracking-[0.2em] opacity-40">WOM Lifecycle · v1.0</div>
+                    <div className="font-mono text-[10px] uppercase tracking-[0.2em] opacity-40">
+                      WOM Lifecycle · v1.0
+                    </div>
                   </div>
 
                   {/* Page controls */}
@@ -1253,13 +1568,19 @@ function Dashboard() {
                         {Array.from({ length: totalPages }, (_, i) => i)
                           .filter((i) => i === 0 || i === totalPages - 1 || Math.abs(i - page) <= 2)
                           .reduce<(number | "…")[]>((acc, i, idx, arr) => {
-                            if (idx > 0 && (i as number) - (arr[idx - 1] as number) > 1) acc.push("…");
+                            if (idx > 0 && (i as number) - (arr[idx - 1] as number) > 1)
+                              acc.push("…");
                             acc.push(i);
                             return acc;
                           }, [])
                           .map((item, idx) =>
                             item === "…" ? (
-                              <span key={`ellipsis-${idx}`} className="px-1 text-xs text-muted-foreground/40">…</span>
+                              <span
+                                key={`ellipsis-${idx}`}
+                                className="px-1 text-xs text-muted-foreground/40"
+                              >
+                                …
+                              </span>
                             ) : (
                               <button
                                 key={item}
@@ -1272,7 +1593,7 @@ function Dashboard() {
                               >
                                 {(item as number) + 1}
                               </button>
-                            )
+                            ),
                           )}
                       </div>
 
@@ -1298,47 +1619,81 @@ function Dashboard() {
               )}
             </div>
           </div>
-        </>)}
-        {activeTab === "Lifecycle Rules" && <LifecycleRulesTab />}
+        </>
+      )}
+      {activeTab === "Lifecycle Rules" && <LifecycleRulesTab />}
 
-      <RecommendationDetail rec={selected} open={open} onOpenChange={setOpen} linkedAction={selected ? getLinkedAction(selected.id) : null} />
-
+      <RecommendationDetail
+        rec={selected}
+        open={open}
+        onOpenChange={setOpen}
+        linkedAction={selected ? getLinkedAction(selected.id) : null}
+      />
 
       {/* Single delete confirmation */}
-      <Dialog open={deleteId !== null} onOpenChange={(v) => { if (!v && !deleteMutation.isPending) setDeleteId(null); }}>
+      <Dialog
+        open={deleteId !== null}
+        onOpenChange={(v) => {
+          if (!v && !deleteMutation.isPending) setDeleteId(null);
+        }}
+      >
         <DialogContent className="sm:max-w-sm bg-surface border-border">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-destructive">
               <Trash2 className="size-4" /> Delete record?
             </DialogTitle>
             <DialogDescription>
-              This will permanently remove this recommendation <strong>and any linked action</strong> from the database. This action cannot be undone.
+              This will permanently remove this recommendation{" "}
+              <strong>and any linked action</strong> from the database. This action cannot be
+              undone.
             </DialogDescription>
           </DialogHeader>
           <div className="mt-4 flex justify-end gap-3">
-            <Button variant="outline" size="sm" onClick={() => setDeleteId(null)} disabled={deleteMutation.isPending}>Cancel</Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setDeleteId(null)}
+              disabled={deleteMutation.isPending}
+            >
+              Cancel
+            </Button>
             <Button
               size="sm"
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90 font-bold"
               disabled={deleteMutation.isPending}
               onClick={() => deleteId && deleteMutation.mutate(deleteId)}
             >
-              {deleteMutation.isPending ? <><Loader2 className="mr-2 size-3.5 animate-spin" />Deleting…</> : "Delete"}
+              {deleteMutation.isPending ? (
+                <>
+                  <Loader2 className="mr-2 size-3.5 animate-spin" />
+                  Deleting…
+                </>
+              ) : (
+                "Delete"
+              )}
             </Button>
           </div>
         </DialogContent>
       </Dialog>
 
       {/* Bulk delete confirmation */}
-      <Dialog open={bulkDeleteOpen} onOpenChange={(v) => { if (!v && !bulkDeleteMutation.isPending) setBulkDeleteOpen(false); }}>
+      <Dialog
+        open={bulkDeleteOpen}
+        onOpenChange={(v) => {
+          if (!v && !bulkDeleteMutation.isPending) setBulkDeleteOpen(false);
+        }}
+      >
         <DialogContent className="sm:max-w-sm bg-surface border-border">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-destructive">
-              <Trash2 className="size-4" /> Delete {selectedIds.size} record{selectedIds.size !== 1 ? "s" : ""}?
+              <Trash2 className="size-4" /> Delete {selectedIds.size} record
+              {selectedIds.size !== 1 ? "s" : ""}?
             </DialogTitle>
             <DialogDescription>
               This will permanently remove{" "}
-              <strong>{selectedIds.size} recommendation{selectedIds.size !== 1 ? "s" : ""}</strong>{" "}
+              <strong>
+                {selectedIds.size} recommendation{selectedIds.size !== 1 ? "s" : ""}
+              </strong>{" "}
               and all their linked actions from the database. This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
@@ -1348,14 +1703,28 @@ function Dashboard() {
             </div>
           )}
           <div className="mt-4 flex justify-end gap-3">
-            <Button variant="outline" size="sm" onClick={() => setBulkDeleteOpen(false)} disabled={bulkDeleteMutation.isPending}>Cancel</Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setBulkDeleteOpen(false)}
+              disabled={bulkDeleteMutation.isPending}
+            >
+              Cancel
+            </Button>
             <Button
               size="sm"
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90 font-bold"
               disabled={bulkDeleteMutation.isPending}
               onClick={() => bulkDeleteMutation.mutate([...selectedIds])}
             >
-              {bulkDeleteMutation.isPending ? <><Loader2 className="mr-2 size-3.5 animate-spin" />Deleting…</> : `Delete ${selectedIds.size}`}
+              {bulkDeleteMutation.isPending ? (
+                <>
+                  <Loader2 className="mr-2 size-3.5 animate-spin" />
+                  Deleting…
+                </>
+              ) : (
+                `Delete ${selectedIds.size}`
+              )}
             </Button>
           </div>
         </DialogContent>
@@ -1392,18 +1761,16 @@ function KpiCard({
         <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/80">
           {label}
         </div>
-        <div className={`size-8 rounded-lg bg-foreground/[0.03] grid place-items-center ${toneCls}`}>
+        <div
+          className={`size-8 rounded-lg bg-foreground/[0.03] grid place-items-center ${toneCls}`}
+        >
           {icon}
         </div>
       </div>
       <div className={`mt-4 font-display text-4xl font-bold tracking-tight ${toneCls}`}>
         {value}
       </div>
-      {hint && (
-        <div className="mt-2 text-xs font-medium text-muted-foreground/70">
-          {hint}
-        </div>
-      )}
+      {hint && <div className="mt-2 text-xs font-medium text-muted-foreground/70">{hint}</div>}
     </div>
   );
 }

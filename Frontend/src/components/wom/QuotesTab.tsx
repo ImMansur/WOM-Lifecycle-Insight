@@ -184,7 +184,9 @@ export function QuotesTab({
                 <AlertTriangle className="size-8 text-destructive/70" />
               </div>
               <p className="text-base font-semibold text-foreground">Could not load data</p>
-              <p className="text-sm text-muted-foreground">Check that the backend server is running.</p>
+              <p className="text-sm text-muted-foreground">
+                Check that the backend server is running.
+              </p>
             </div>
           )}
 
@@ -217,7 +219,9 @@ export function QuotesTab({
                     <div className="min-w-0">
                       <div className="text-sm font-semibold text-foreground truncate">
                         {r.customer ?? (
-                          <span className="text-muted-foreground italic font-normal">Unknown Customer</span>
+                          <span className="text-muted-foreground italic font-normal">
+                            Unknown Customer
+                          </span>
                         )}
                       </div>
                       <div className="font-mono text-[10px] text-muted-foreground mt-0.5 truncate">
@@ -238,7 +242,11 @@ export function QuotesTab({
                   </div>
 
                   <div className="font-mono text-xs">
-                    <div className={overdue ? "text-destructive font-bold" : "text-foreground font-medium"}>
+                    <div
+                      className={
+                        overdue ? "text-destructive font-bold" : "text-foreground font-medium"
+                      }
+                    >
                       {r.recertificationDue ?? "—"}
                     </div>
                     {r.monthsToRecert !== null && (

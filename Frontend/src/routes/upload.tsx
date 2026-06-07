@@ -1,7 +1,13 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useState, useRef, useEffect } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ingestFiles, uploadFileInChunks, confirmIngestUpdates, type IngestResponse, type PendingDuplicate } from "@/lib/api";
+import {
+  ingestFiles,
+  uploadFileInChunks,
+  confirmIngestUpdates,
+  type IngestResponse,
+  type PendingDuplicate,
+} from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -12,7 +18,21 @@ import {
 } from "@/components/ui/dialog";
 import { LoadingScreen } from "@/components/wom/LoadingScreen";
 import { NotificationBell } from "@/components/wom/NotificationBell";
-import { Upload, FileText, X, AlertTriangle, CloudUpload, CheckCircle2, ShieldAlert, LogOut, User, ChevronDown, Loader2, Zap, Wrench } from "lucide-react";
+import {
+  Upload,
+  FileText,
+  X,
+  AlertTriangle,
+  CloudUpload,
+  CheckCircle2,
+  ShieldAlert,
+  LogOut,
+  User,
+  ChevronDown,
+  Loader2,
+  Zap,
+  Wrench,
+} from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -63,8 +83,7 @@ function UploadPage() {
       // Detect at runtime: if we're not on localhost, use the SAS flow so
       // files go directly from the browser to Azure Blob, bypassing Vercel.
       const isLocal =
-        window.location.hostname === "localhost" ||
-        window.location.hostname === "127.0.0.1";
+        window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
 
       if (!isLocal) {
         // Vercel path: split each file into 3.5 MB chunks and POST them
@@ -97,7 +116,8 @@ function UploadPage() {
       qc.invalidateQueries({ queryKey: ["recommendations"] });
 
       for (const rec of data.recommendations) {
-        const needsReview = rec.priority === "Manual review" || rec.extractionStatus !== "OK" || !rec.customer;
+        const needsReview =
+          rec.priority === "Manual review" || rec.extractionStatus !== "OK" || !rec.customer;
         addNotification({
           fileName: rec.sourceFile,
           status: needsReview ? "warning" : "success",
@@ -134,13 +154,16 @@ function UploadPage() {
     },
   });
 
-
   const confirmMutation = useMutation({
     mutationFn: confirmIngestUpdates,
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ["recommendations"] });
       for (const rec of data.recommendations) {
-        addNotification({ fileName: rec.sourceFile, status: "success", message: "Replaced existing record" });
+        addNotification({
+          fileName: rec.sourceFile,
+          status: "success",
+          message: "Replaced existing record",
+        });
       }
       setPendingDuplicates([]);
       setSavedCount(0);
@@ -182,17 +205,14 @@ function UploadPage() {
   }, [mutation.isPending]);
 
   const addFiles = (incoming: FileList | File[]) => {
-    const filtered = Array.from(incoming).filter((f) =>
-      /\.(pdf|doc|docx)$/i.test(f.name)
-    );
+    const filtered = Array.from(incoming).filter((f) => /\.(pdf|doc|docx)$/i.test(f.name));
     setFiles((prev) => {
       const names = new Set(prev.map((f) => f.name));
       return [...prev, ...filtered.filter((f) => !names.has(f.name))];
     });
   };
 
-  const removeFile = (name: string) =>
-    setFiles((prev) => prev.filter((f) => f.name !== name));
+  const removeFile = (name: string) => setFiles((prev) => prev.filter((f) => f.name !== name));
 
   const handleProcess = () => {
     if (files.length > 0) {
@@ -220,20 +240,26 @@ function UploadPage() {
             )}
             <h1 className="font-display text-4xl font-black tracking-tight">Upload Logs</h1>
             <p className="text-muted-foreground">
-              Processed {uploadResult.processed} files. Generated {uploadResult.recommendations?.length || 0} recommendations.
+              Processed {uploadResult.processed} files. Generated{" "}
+              {uploadResult.recommendations?.length || 0} recommendations.
             </p>
           </div>
 
-          <div className={`space-y-4 p-6 rounded-3xl border ${uploadResult.errors && uploadResult.errors.length > 0 ? 'bg-secondary/30 border-border/40' : 'bg-green-500/5 border-green-500/20'}`}>
+          <div
+            className={`space-y-4 p-6 rounded-3xl border ${uploadResult.errors && uploadResult.errors.length > 0 ? "bg-secondary/30 border-border/40" : "bg-green-500/5 border-green-500/20"}`}
+          >
             {uploadResult.errors && uploadResult.errors.length > 0 ? (
               <>
                 <h3 className="font-semibold flex items-center gap-2">
                   <ShieldAlert className="size-5 text-destructive" />
-                  {uploadResult.errors.length} Warning{uploadResult.errors.length !== 1 ? 's' : ''}
+                  {uploadResult.errors.length} Warning{uploadResult.errors.length !== 1 ? "s" : ""}
                 </h3>
                 <div className="max-h-80 overflow-y-auto pr-2 space-y-3">
                   {uploadResult.errors.map((err, idx) => (
-                    <div key={idx} className="rounded-xl border border-destructive/20 bg-destructive/5 p-4 text-sm text-destructive font-mono">
+                    <div
+                      key={idx}
+                      className="rounded-xl border border-destructive/20 bg-destructive/5 p-4 text-sm text-destructive font-mono"
+                    >
                       {err}
                     </div>
                   ))}
@@ -251,7 +277,10 @@ function UploadPage() {
             <Button
               size="lg"
               variant="outline"
-              onClick={() => { setUploadResult(null); setFiles([]); }}
+              onClick={() => {
+                setUploadResult(null);
+                setFiles([]);
+              }}
               className="font-bold px-8 h-14 rounded-xl text-lg"
             >
               Upload More
@@ -274,25 +303,33 @@ function UploadPage() {
                 Upload Certificates of Conformance
               </h1>
               <p className="text-sm text-muted-foreground font-medium">
-                Supported formats: PDF, DOC, DOCX. Upload certificates to parse and match them against rules.
+                Supported formats: PDF, DOC, DOCX. Upload certificates to parse and match them
+                against rules.
               </p>
             </div>
 
             {/* Upload Drop Zone Card */}
             <div className="bg-surface/50 border border-border/40 p-6 rounded-3xl backdrop-blur-md shadow-xl">
               <div
-                onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-                onDragLeave={(e) => { e.preventDefault(); setDragOver(false); }}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setDragOver(true);
+                }}
+                onDragLeave={(e) => {
+                  e.preventDefault();
+                  setDragOver(false);
+                }}
                 onDrop={(e) => {
                   e.preventDefault();
                   setDragOver(false);
                   addFiles(e.dataTransfer.files);
                 }}
                 onClick={() => inputRef.current?.click()}
-                className={`cursor-pointer rounded-2xl border-2 border-dashed p-10 text-center transition-all ${dragOver
+                className={`cursor-pointer rounded-2xl border-2 border-dashed p-10 text-center transition-all ${
+                  dragOver
                     ? "border-primary bg-primary/5 scale-[1.01]"
                     : "border-border/60 bg-background/30 hover:border-primary/50 hover:bg-primary/5 hover:scale-[1.005]"
-                  }`}
+                }`}
               >
                 <input
                   type="file"
@@ -306,8 +343,12 @@ function UploadPage() {
                   <Upload className="size-6 text-primary animate-bounce" />
                 </div>
                 <p className="text-base font-bold text-foreground">Drag & drop files here</p>
-                <p className="mt-1.5 text-xs text-muted-foreground font-medium">or click to browse from your computer</p>
-                <p className="mt-3 text-[10px] text-muted-foreground/60 uppercase tracking-widest font-mono">PDF, DOC, DOCX up to 200MB</p>
+                <p className="mt-1.5 text-xs text-muted-foreground font-medium">
+                  or click to browse from your computer
+                </p>
+                <p className="mt-3 text-[10px] text-muted-foreground/60 uppercase tracking-widest font-mono">
+                  PDF, DOC, DOCX up to 200MB
+                </p>
               </div>
             </div>
 
@@ -319,7 +360,7 @@ function UploadPage() {
                     <span className="flex size-5 items-center justify-center rounded-full bg-primary/10 text-xs text-primary font-bold">
                       {files.length}
                     </span>
-                    File{files.length !== 1 ? 's' : ''} Queued
+                    File{files.length !== 1 ? "s" : ""} Queued
                   </h3>
                   <Button
                     variant="ghost"
@@ -332,15 +373,28 @@ function UploadPage() {
                 </div>
                 <div className="max-h-60 overflow-y-auto pr-1 space-y-2">
                   {files.map((f) => (
-                    <div key={f.name} className="flex items-center justify-between rounded-xl border border-border/60 bg-background/50 px-4 py-3 shadow-sm group hover:border-primary/30 transition-colors">
+                    <div
+                      key={f.name}
+                      className="flex items-center justify-between rounded-xl border border-border/60 bg-background/50 px-4 py-3 shadow-sm group hover:border-primary/30 transition-colors"
+                    >
                       <div className="flex items-center gap-3 overflow-hidden">
                         <FileText className="size-4 shrink-0 text-primary transition-transform group-hover:scale-110" />
-                        <span className="truncate text-xs font-semibold text-foreground" title={f.name}>{f.name}</span>
+                        <span
+                          className="truncate text-xs font-semibold text-foreground"
+                          title={f.name}
+                        >
+                          {f.name}
+                        </span>
                       </div>
                       <div className="flex items-center gap-3 shrink-0">
-                        <span className="text-[10px] font-mono font-medium text-muted-foreground">{(f.size / 1024 / 1024).toFixed(1)} MB</span>
+                        <span className="text-[10px] font-mono font-medium text-muted-foreground">
+                          {(f.size / 1024 / 1024).toFixed(1)} MB
+                        </span>
                         <button
-                          onClick={(e) => { e.stopPropagation(); removeFile(f.name); }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removeFile(f.name);
+                          }}
                           className="p-1 rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-all"
                         >
                           <X className="size-3.5" />
@@ -369,7 +423,8 @@ function UploadPage() {
                 className="bg-primary hover:bg-primary/95 text-white font-bold px-8 h-14 rounded-2xl text-base shadow-xl shadow-primary/10 w-full sm:w-auto transition-all duration-300 hover:-translate-y-0.5 active:translate-y-0"
               >
                 <CloudUpload className="mr-2.5 size-5" />
-                Process {files.length > 0 ? `${files.length} ` : ''}Document{files.length === 1 ? '' : 's'}
+                Process {files.length > 0 ? `${files.length} ` : ""}Document
+                {files.length === 1 ? "" : "s"}
               </Button>
             </div>
           </div>
@@ -381,7 +436,8 @@ function UploadPage() {
                 <Zap className="size-5 text-primary animate-pulse" /> Ingestion Pipeline
               </h3>
               <p className="text-xs text-muted-foreground leading-relaxed font-medium">
-                Each certificate is run through an advanced document classification and data-extraction sequence to build a structured equipment history.
+                Each certificate is run through an advanced document classification and
+                data-extraction sequence to build a structured equipment history.
               </p>
 
               <div className="space-y-4">
@@ -393,7 +449,8 @@ function UploadPage() {
                   <div className="space-y-1">
                     <h4 className="text-xs font-bold text-foreground">1. AI-Powered Extraction</h4>
                     <p className="text-[11px] text-muted-foreground leading-relaxed font-medium">
-                      Retrieve Customer Names, Sales Orders, Purchase Orders, and serial records instantly with Azure AI Document Intelligence.
+                      Retrieve Customer Names, Sales Orders, Purchase Orders, and serial records
+                      instantly with Azure AI Document Intelligence.
                     </p>
                   </div>
                 </div>
@@ -404,9 +461,12 @@ function UploadPage() {
                     <ShieldAlert className="size-4.5" />
                   </div>
                   <div className="space-y-1">
-                    <h4 className="text-xs font-bold text-foreground">2. High Accuracy OCR Engine</h4>
+                    <h4 className="text-xs font-bold text-foreground">
+                      2. High Accuracy OCR Engine
+                    </h4>
                     <p className="text-[11px] text-muted-foreground leading-relaxed font-medium">
-                      Scanned or flat documents undergo robust Optical Character Recognition to extract text layers and confirm data alignment.
+                      Scanned or flat documents undergo robust Optical Character Recognition to
+                      extract text layers and confirm data alignment.
                     </p>
                   </div>
                 </div>
@@ -417,9 +477,12 @@ function UploadPage() {
                     <Wrench className="size-4.5" />
                   </div>
                   <div className="space-y-1">
-                    <h4 className="text-xs font-bold text-foreground">3. Lifecycle Opportunity Matching</h4>
+                    <h4 className="text-xs font-bold text-foreground">
+                      3. Lifecycle Opportunity Matching
+                    </h4>
                     <p className="text-[11px] text-muted-foreground leading-relaxed font-medium">
-                      Verify certificate dates against corporate database rules to compute precise service intervals and prompt upcoming recertifications.
+                      Verify certificate dates against corporate database rules to compute precise
+                      service intervals and prompt upcoming recertifications.
                     </p>
                   </div>
                 </div>
@@ -428,7 +491,6 @@ function UploadPage() {
           </div>
         </div>
       )}
-
 
       {/* Duplicate-confirmation popup — locked: admin MUST click one of the
           two footer buttons. Escape key, outside click, and the X close button
@@ -452,10 +514,9 @@ function UploadPage() {
                 </span>
               )}
               {pendingDuplicates.length} uploaded file
-              {pendingDuplicates.length !== 1 ? "s match" : " matches"} an existing record
-              (same file or same customer + sales order + certificate date).
-              Replace the existing record{pendingDuplicates.length !== 1 ? "s" : ""} or cancel
-              the upload.
+              {pendingDuplicates.length !== 1 ? "s match" : " matches"} an existing record (same
+              file or same customer + sales order + certificate date). Replace the existing record
+              {pendingDuplicates.length !== 1 ? "s" : ""} or cancel the upload.
             </DialogDescription>
           </DialogHeader>
 
@@ -470,14 +531,18 @@ function UploadPage() {
                     {d.existingFile}
                   </p>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    {d.existingCustomer ?? "—"} · SO {d.existingSalesOrder ?? "—"} · {d.existingCertificateDate ?? "—"}
+                    {d.existingCustomer ?? "—"} · SO {d.existingSalesOrder ?? "—"} ·{" "}
+                    {d.existingCertificateDate ?? "—"}
                   </p>
                 </div>
                 <div className="border-t border-border/30 pt-2">
                   <p className="text-xs text-muted-foreground uppercase tracking-wide font-semibold">
                     New upload
                   </p>
-                  <p className="font-mono text-xs text-foreground truncate" title={d.newRecommendation.sourceFile}>
+                  <p
+                    className="font-mono text-xs text-foreground truncate"
+                    title={d.newRecommendation.sourceFile}
+                  >
                     {d.newRecommendation.sourceFile}
                   </p>
                 </div>

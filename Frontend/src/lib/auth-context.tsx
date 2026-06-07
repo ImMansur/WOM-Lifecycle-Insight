@@ -1,8 +1,8 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
-import { 
-  onAuthStateChanged, 
-  signInWithEmailAndPassword, 
-  createUserWithEmailAndPassword, 
+import {
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
   signOut as firebaseSignOut,
   updateProfile,
 } from "firebase/auth";
@@ -62,7 +62,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
     });
 
-    return () => { clearTimeout(timeout); unsubscribe(); };
+    return () => {
+      clearTimeout(timeout);
+      unsubscribe();
+    };
   }, []);
 
   const signIn = async (email: string, password: string) => {
@@ -71,19 +74,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signUp = async (email: string, password: string, displayName: string, role: string) => {
     const { user: firebaseUser } = await createUserWithEmailAndPassword(auth, email, password);
-    
+
     // Update the profile with the display name
-    await updateProfile(firebaseUser, { 
-      displayName: displayName || "WOM User" 
+    await updateProfile(firebaseUser, {
+      displayName: displayName || "WOM User",
     });
-    
+
     // Store profile in Firestore
     await setDoc(doc(db, "users", firebaseUser.uid), {
       role: role || "Uploader",
       email: firebaseUser.email,
-      displayName: displayName || "WOM User"
+      displayName: displayName || "WOM User",
     });
-    
+
     setUser({
       uid: firebaseUser.uid,
       email: firebaseUser.email,

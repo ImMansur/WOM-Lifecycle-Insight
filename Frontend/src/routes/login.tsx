@@ -5,7 +5,16 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { LoadingScreen } from "@/components/wom/LoadingScreen";
-import { Lock, Mail, ChevronRight, Globe, ShieldCheck, User, Briefcase, Loader2 } from "lucide-react";
+import {
+  Lock,
+  Mail,
+  ChevronRight,
+  Globe,
+  ShieldCheck,
+  User,
+  Briefcase,
+  Loader2,
+} from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { fetchRecommendations, fetchActions } from "@/lib/api";
 
@@ -51,7 +60,11 @@ function LoginPage() {
     } catch (err: unknown) {
       setIsSubmitting(false); // re-enable button so the user can retry
       const code = (err as { code?: string }).code ?? "";
-      if (code === "auth/invalid-credential" || code === "auth/user-not-found" || code === "auth/wrong-password") {
+      if (
+        code === "auth/invalid-credential" ||
+        code === "auth/user-not-found" ||
+        code === "auth/wrong-password"
+      ) {
         setError("Invalid email or password.");
       } else if (code === "auth/email-already-in-use") {
         setError("An account with this email already exists.");
@@ -68,7 +81,6 @@ function LoginPage() {
       }
     }
   };
-
 
   if (isLoading) return <LoadingScreen onFinished={() => setBarFinished(true)} />;
 
@@ -123,7 +135,9 @@ function LoginPage() {
             </div>
           </div>
           <div className="pt-10 border-t border-white/10 flex items-center justify-between">
-            <div className="font-mono text-[10px] uppercase tracking-widest text-white/30">WOM_SECURE_GATEWAY_v4.2</div>
+            <div className="font-mono text-[10px] uppercase tracking-widest text-white/30">
+              WOM_SECURE_GATEWAY_v4.2
+            </div>
             <div className="flex gap-4 text-white/30 text-xs font-bold uppercase tracking-widest">
               <span>Security</span>
               <span>Privacy</span>
@@ -145,9 +159,7 @@ function LoginPage() {
           </div>
 
           <div className="mb-10">
-            <h2 className="text-4xl font-black tracking-tight text-accent mb-3">
-              Gateway Access
-            </h2>
+            <h2 className="text-4xl font-black tracking-tight text-accent mb-3">Gateway Access</h2>
             <p className="text-muted-foreground font-medium text-lg">
               Enter your credentials to manage lifecycle assets.
             </p>
@@ -161,7 +173,10 @@ function LoginPage() {
             )}
 
             <div className="space-y-3">
-              <Label htmlFor="email" className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/80">
+              <Label
+                htmlFor="email"
+                className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/80"
+              >
                 Corporate Email
               </Label>
               <div className="relative group">
@@ -179,7 +194,10 @@ function LoginPage() {
             </div>
 
             <div className="space-y-3">
-              <Label htmlFor="password" className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/80">
+              <Label
+                htmlFor="password"
+                className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/80"
+              >
                 Password
               </Label>
               <div className="relative group">
@@ -204,9 +222,14 @@ function LoginPage() {
               >
                 <span className="relative z-10 flex items-center justify-center">
                   {isSubmitting ? (
-                    <><Loader2 className="mr-2 size-5 animate-spin" /> Verifying...</>
+                    <>
+                      <Loader2 className="mr-2 size-5 animate-spin" /> Verifying...
+                    </>
                   ) : (
-                    <>Establish Connection<ChevronRight className="ml-2 size-6 transition-transform group-hover:translate-x-1" /></>
+                    <>
+                      Establish Connection
+                      <ChevronRight className="ml-2 size-6 transition-transform group-hover:translate-x-1" />
+                    </>
                   )}
                 </span>
                 <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:animate-shimmer" />

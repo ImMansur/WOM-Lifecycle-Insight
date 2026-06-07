@@ -94,7 +94,8 @@ export function groupSerialsByPart(rec: Recommendation): {
         order.push(key);
       } else {
         if (li.qty != null) existing.part.qty = (existing.part.qty ?? 0) + li.qty;
-        if (!existing.part.description && li.description) existing.part.description = li.description;
+        if (!existing.part.description && li.description)
+          existing.part.description = li.description;
         for (const s of li.serials) {
           if (s && !existing.serials.includes(s)) existing.serials.push(s);
         }
@@ -108,14 +109,18 @@ export function groupSerialsByPart(rec: Recommendation): {
     const orphanSerials: string[] = [];
     for (const li of rec.lineItems) {
       if (li.partNumber) continue;
-      for (const s of li.serials) if (!attributed.has(s) && !orphanSerials.includes(s)) orphanSerials.push(s);
+      for (const s of li.serials)
+        if (!attributed.has(s) && !orphanSerials.includes(s)) orphanSerials.push(s);
     }
-    for (const s of orphanSerials) if (!unattributedSerials.includes(s)) unattributedSerials.push(s);
+    for (const s of orphanSerials)
+      if (!unattributedSerials.includes(s)) unattributedSerials.push(s);
     return { groups, unattributedSerials };
   }
 
   // No lineItems: dedup the flat partNumbers; all serials become unattributed.
-  const groups = dedupePartEntries(rec.partNumbers).map((p) => ({ part: p, serials: [] as string[] }));
+  const groups = dedupePartEntries(rec.partNumbers).map((p) => ({
+    part: p,
+    serials: [] as string[],
+  }));
   return { groups, unattributedSerials: [...rec.serials] };
 }
-

@@ -14,7 +14,7 @@ const firebaseConfig = {
 
 if (!firebaseConfig.apiKey) {
   throw new Error(
-    "Firebase is not configured. Set VITE_FIREBASE_API_KEY and other VITE_FIREBASE_* environment variables."
+    "Firebase is not configured. Set VITE_FIREBASE_API_KEY and other VITE_FIREBASE_* environment variables.",
   );
 }
 

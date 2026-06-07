@@ -23,6 +23,53 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["ingest"])
 
+
+def log_optimization_event(filename: str, original_size: int, compressed_size: int, bypass_di: bool, pages: int) -> None:
+    from datetime import datetime, timezone
+    import uuid
+    from models import CompressionLog
+    from store import compression_log_store
+
+    saved_size = original_size - compressed_size if original_size > compressed_size else 0
+    
+    # 1. Storage savings: hot tier rate $0.03 / GB / month over 3-year standard lifecycle
+    gb_saved = saved_size / (1024 * 1024 * 1024)
+    storage_savings = round(gb_saved * 0.03 * 36, 6)
+
+    # 2. Azure Document Intelligence savings:
+    # If bypassed entirely (DOC/DOCX): pages * $0.01
+    # If PDF original_size > 4MB but compressed <= 4MB, we avoided Standard tier.
+    # Standard Tier charges $0.01 per page.
+    # Otherwise, efficiency/bandwidth savings = $0.005 per MB compressed.
+    di_savings = 0.0
+    if bypass_di:
+        di_savings = round(pages * 0.01, 4)
+    elif original_size > 4 * 1024 * 1024 and compressed_size <= 4 * 1024 * 1024:
+        # Avoided standard tier upgrade
+        di_savings = round(pages * 0.01, 4)
+    else:
+        # Bandwidth & processing resource savings
+        mb_saved = saved_size / (1024 * 1024)
+        di_savings = round(mb_saved * 0.005, 4)
+
+    total_savings = round(storage_savings + di_savings, 4)
+
+    log_entry = CompressionLog(
+        id=str(uuid.uuid4()),
+        filename=filename,
+        originalSize=original_size,
+        compressedSize=compressed_size,
+        savedSize=saved_size,
+        bypassDi=bypass_di,
+        pages=pages,
+        storageSavings=storage_savings,
+        diSavings=di_savings,
+        totalSavings=total_savings,
+        timestamp=datetime.now(timezone.utc).isoformat(),
+    )
+    compression_log_store.add(log_entry)
+
+
 ALLOWED_EXTENSIONS = {".pdf", ".doc", ".docx"}
 MAX_FILE_SIZE_MB = 200
 MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
@@ -96,6 +143,10 @@ async def ingest_files(files: List[UploadFile] = File(...)):
             continue
 
         file_bytes = await upload.read()
+        original_size = len(file_bytes)
+        compressed_size = original_size
+        pages = 0
+        bypassed = False
 
         if len(file_bytes) > MAX_FILE_SIZE_BYTES:
             errors.append(f"{filename}: file exceeds {MAX_FILE_SIZE_MB} MB limit.")
@@ -104,6 +155,12 @@ async def ingest_files(files: List[UploadFile] = File(...)):
         if len(file_bytes) == 0:
             errors.append(f"{filename}: empty file.")
             continue
+
+        # Compress PDF if applicable
+        if ext == ".pdf":
+            from services.pdf_compressor import compress_pdf_bytes
+            file_bytes, pages = compress_pdf_bytes(file_bytes, filename)
+            compressed_size = len(file_bytes)
 
         # Upload original file to Azure Blob Storage and capture the URL
         blob_url = upload_file(file_bytes, filename)
@@ -118,6 +175,7 @@ async def ingest_files(files: List[UploadFile] = File(...)):
                 if len(docx_text.strip()) >= 100:
                     extracted_text = docx_text
                     is_ocr_needed = False
+                    bypassed = True
                     # Record conversion only for legacy .doc files
                     if ext == ".doc":
                         converted_docx_name = Path(filename).stem + ".docx"
@@ -136,6 +194,13 @@ async def ingest_files(files: List[UploadFile] = File(...)):
             )
             recommendation.convertedDocx = converted_docx_name
             recommendation.blobUrl = blob_url
+
+            if ext == ".pdf":
+                log_optimization_event(filename, original_size, compressed_size, bypass_di=False, pages=pages)
+            elif bypassed:
+                est_pages = max(1, len(extracted_text) // 1500)
+                log_optimization_event(filename, original_size, original_size, bypass_di=True, pages=est_pages)
+
 
             # Duplicate detection — two cases trigger an admin confirmation popup:
             #   1. Same record ID already exists (re-upload of the *exact same*
@@ -206,6 +271,25 @@ async def _process_one_file(
     ext = Path(filename).suffix.lower()
     source_type = ext.lstrip(".").upper()
 
+    original_size = len(file_bytes)
+    compressed_size = original_size
+    pages = 0
+    bypassed = False
+
+    # Compress PDF if applicable
+    if ext == ".pdf":
+        from services.pdf_compressor import compress_pdf_bytes
+        compressed_bytes, pages = compress_pdf_bytes(file_bytes, filename)
+        if len(compressed_bytes) < len(file_bytes):
+            file_bytes = compressed_bytes
+            compressed_size = len(file_bytes)
+            # Re-upload compressed version to Blob Storage
+            try:
+                from services.blob_storage import upload_file
+                upload_file(file_bytes, filename)
+            except Exception as e:
+                logger.warning("Failed to re-upload compressed PDF for %s: %s", filename, e)
+
     try:
         converted_docx_name: str | None = None
         if ext in {".doc", ".docx"}:
@@ -213,6 +297,7 @@ async def _process_one_file(
             if len(docx_text.strip()) >= 100:
                 extracted_text = docx_text
                 is_ocr_needed = False
+                bypassed = True
                 if ext == ".doc":
                     converted_docx_name = Path(filename).stem + ".docx"
             else:
@@ -229,6 +314,13 @@ async def _process_one_file(
         )
         recommendation.convertedDocx = converted_docx_name
         recommendation.blobUrl = blob_url
+
+        if ext == ".pdf":
+            log_optimization_event(filename, original_size, compressed_size, bypass_di=False, pages=pages)
+        elif bypassed:
+            est_pages = max(1, len(extracted_text) // 1500)
+            log_optimization_event(filename, original_size, original_size, bypass_di=True, pages=est_pages)
+
 
         existing = recommendation_store.get(recommendation.id)
         new_combos = _get_combination_keys(recommendation)

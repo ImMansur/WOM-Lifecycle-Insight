@@ -157,7 +157,9 @@ export async function deleteRecommendation(id: string): Promise<void> {
   }
 }
 
-export async function deleteMultipleRecommendations(ids: string[]): Promise<{ deleted: number; not_found: string[] }> {
+export async function deleteMultipleRecommendations(
+  ids: string[],
+): Promise<{ deleted: number; not_found: string[] }> {
   const res = await fetch(`${BASE}/api/recommendations/bulk-delete`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -169,7 +171,9 @@ export async function deleteMultipleRecommendations(ids: string[]): Promise<{ de
   return res.json();
 }
 
-export async function fetchDocumentUrl(filename: string): Promise<{ url: string; filename: string }> {
+export async function fetchDocumentUrl(
+  filename: string,
+): Promise<{ url: string; filename: string }> {
   const ext = filename.split(".").pop()?.toLowerCase() ?? "";
   const needsSas = ext === "docx" || ext === "doc" || ext === "xlsx" || ext === "xls";
   if (needsSas) {
@@ -314,10 +318,9 @@ export async function deleteComment(actionId: string, commentId: string): Promis
 }
 
 export async function suggestNextSteps(actionId: string): Promise<Action> {
-  const res = await fetch(
-    `${BASE}/api/actions/${encodeURIComponent(actionId)}/suggest`,
-    { method: "POST" },
-  );
+  const res = await fetch(`${BASE}/api/actions/${encodeURIComponent(actionId)}/suggest`, {
+    method: "POST",
+  });
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`Suggest failed (${res.status}): ${text}`);
@@ -395,4 +398,50 @@ export async function fetchUserRole(uid: string): Promise<{ role: string }> {
   const res = await fetch(`${BASE}/api/users/role/${encodeURIComponent(uid)}`);
   if (!res.ok) throw new Error(`Failed to fetch user role: ${res.statusText}`);
   return res.json();
+}
+
+// ─── Compression & Cost-Saving Logs ───────────────────────────────────────────
+
+export interface CompressionLog {
+  id: string;
+  filename: string;
+  originalSize: number;
+  compressedSize: number;
+  savedSize: number;
+  bypassDi: boolean;
+  pages: number;
+  storageSavings: number;
+  diSavings: number;
+  totalSavings: number;
+  timestamp: string;
+}
+
+export interface CompressionLogsSummary {
+  totalOriginalSize: number;
+  totalCompressedSize: number;
+  totalSavedSize: number;
+  totalStorageSavings: number;
+  totalDiSavings: number;
+  totalSavings: number;
+  fileCount: number;
+}
+
+export interface CompressionLogsResponse {
+  logs: CompressionLog[];
+  summary: CompressionLogsSummary;
+}
+
+export async function fetchCompressionLogs(): Promise<CompressionLogsResponse> {
+  const res = await fetch(`${BASE}/api/compression-logs`);
+  if (!res.ok) throw new Error(`Failed to fetch compression logs: ${res.statusText}`);
+  return res.json();
+}
+
+export async function clearCompressionLogs(): Promise<void> {
+  const res = await fetch(`${BASE}/api/compression-logs/clear`, {
+    method: "POST",
+  });
+  if (!res.ok && res.status !== 204) {
+    throw new Error(`Failed to clear compression logs: ${res.statusText}`);
+  }
 }

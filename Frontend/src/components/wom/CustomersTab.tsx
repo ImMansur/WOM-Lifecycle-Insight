@@ -77,7 +77,8 @@ function groupCustomers(recs: Recommendation[]): CustomerGroup[] {
   }
 
   return Array.from(map.values()).sort((a, b) => {
-    if (a.highPriorityCount !== b.highPriorityCount) return b.highPriorityCount - a.highPriorityCount;
+    if (a.highPriorityCount !== b.highPriorityCount)
+      return b.highPriorityCount - a.highPriorityCount;
     const am = a.minMonthsToRecert ?? 9999;
     const bm = b.minMonthsToRecert ?? 9999;
     return am - bm;
@@ -245,8 +246,12 @@ export function CustomersTab({
               <div className="size-16 rounded-full bg-destructive/10 grid place-items-center">
                 <AlertTriangle className="size-8 text-destructive/70" />
               </div>
-              <p className="text-base font-semibold text-foreground">Could not load customer data</p>
-              <p className="text-sm text-muted-foreground">Check that the backend server is running.</p>
+              <p className="text-base font-semibold text-foreground">
+                Could not load customer data
+              </p>
+              <p className="text-sm text-muted-foreground">
+                Check that the backend server is running.
+              </p>
             </div>
           )}
 
@@ -258,7 +263,8 @@ export function CustomersTab({
               <div>
                 <p className="text-base font-semibold text-foreground">No customer records found</p>
                 <p className="text-sm text-muted-foreground mt-1">
-                  Ingest certificates of conformance on the Recommendations tab to populate customer accounts.
+                  Ingest certificates of conformance on the Recommendations tab to populate customer
+                  accounts.
                 </p>
               </div>
             </div>
@@ -346,9 +352,10 @@ export function CustomersTab({
         {!isLoading && !isError && customers.length > 0 && (
           <div className="mt-6 flex items-center justify-between gap-4 text-xs text-muted-foreground border-t border-border/30 pt-6">
             <span>
-              <span className="font-bold text-foreground">{customers.length}</span> customer accounts
-              across{" "}
-              <span className="font-bold text-foreground">{recommendations.length}</span> certificates
+              <span className="font-bold text-foreground">{customers.length}</span> customer
+              accounts across{" "}
+              <span className="font-bold text-foreground">{recommendations.length}</span>{" "}
+              certificates
             </span>
             <div className="font-mono text-[10px] uppercase tracking-[0.2em] opacity-60">
               WOM_Customers · v1.0.0

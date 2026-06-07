@@ -86,10 +86,10 @@
   --card-foreground: oklch(0.12 0.02 250);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.12 0.02 250);
-  --primary: #FF7235;
+  --primary: #ff7235;
   /* Precise Industrial Orange from image */
   --primary-foreground: oklch(1 0 0);
-  --amber: #FF7235;
+  --amber: #ff7235;
   --amber-foreground: oklch(1 0 0);
   --secondary: oklch(0.96 0.01 250);
   /* Light gray for pills */
@@ -103,24 +103,24 @@
   --destructive-foreground: oklch(0.98 0.01 25);
   --success: oklch(0.6 0.14 155);
   --success-foreground: oklch(0.98 0.01 155);
-  --warning: #FF7235;
+  --warning: #ff7235;
   --warning-foreground: oklch(1 0 0);
   --border: oklch(0.92 0.005 250);
   --input: oklch(0.92 0.005 250);
-  --ring: #FF7235;
-  --chart-1: #FF7235;
+  --ring: #ff7235;
+  --chart-1: #ff7235;
   --chart-2: oklch(0.1 0.02 250);
   --chart-3: oklch(0.45 0.02 250);
   --chart-4: oklch(0.6 0.14 155);
   --chart-5: oklch(0.55 0.2 25);
   --sidebar: oklch(0.12 0.02 250);
   --sidebar-foreground: oklch(0.98 0.005 250);
-  --sidebar-primary: #FF7235;
+  --sidebar-primary: #ff7235;
   --sidebar-primary-foreground: oklch(1 0 0);
   --sidebar-accent: oklch(0.2 0.04 250);
   --sidebar-accent-foreground: oklch(0.98 0.005 250);
   --sidebar-border: oklch(0.2 0.04 250);
-  --sidebar-ring: #FF7235;
+  --sidebar-ring: #ff7235;
 }
 
 .dark {
@@ -201,10 +201,26 @@
   .bg-mesh {
     background-color: #fdfdfd;
     background-image:
-      radial-gradient(at 0% 0%, color-mix(in oklab, var(--primary) 15%, transparent) 0px, transparent 45%),
-      radial-gradient(at 100% 0%, color-mix(in oklab, var(--primary) 10%, transparent) 0px, transparent 40%),
-      radial-gradient(at 90% 40%, color-mix(in oklab, #FF9B4D 8%, transparent) 0px, transparent 50%),
-      radial-gradient(at 10% 60%, color-mix(in oklab, var(--primary) 5%, transparent) 0px, transparent 45%);
+      radial-gradient(
+        at 0% 0%,
+        color-mix(in oklab, var(--primary) 15%, transparent) 0px,
+        transparent 45%
+      ),
+      radial-gradient(
+        at 100% 0%,
+        color-mix(in oklab, var(--primary) 10%, transparent) 0px,
+        transparent 40%
+      ),
+      radial-gradient(
+        at 90% 40%,
+        color-mix(in oklab, #ff9b4d 8%, transparent) 0px,
+        transparent 50%
+      ),
+      radial-gradient(
+        at 10% 60%,
+        color-mix(in oklab, var(--primary) 5%, transparent) 0px,
+        transparent 45%
+      );
   }
 
   .glass {

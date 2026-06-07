@@ -6,20 +6,32 @@
     <link rel="icon" type="image/png" href="/logo.png" />
     <title>Lifecycle Insight</title>
     <style>
-      body { margin: 0; background: #09090b; }
+      body {
+        margin: 0;
+        background: #09090b;
+      }
       #root-loader {
-        position: fixed; inset: 0; display: flex;
-        align-items: center; justify-content: center;
-        background: #09090b; z-index: 9999;
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #09090b;
+        z-index: 9999;
       }
       .rl-ring {
-        width: 44px; height: 44px;
+        width: 44px;
+        height: 44px;
         border-radius: 50%;
-        border: 3px solid rgba(255,255,255,0.08);
-        border-top-color: rgba(255,255,255,0.7);
+        border: 3px solid rgba(255, 255, 255, 0.08);
+        border-top-color: rgba(255, 255, 255, 0.7);
         animation: rl-spin 0.75s linear infinite;
       }
-      @keyframes rl-spin { to { transform: rotate(360deg); } }
+      @keyframes rl-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
     </style>
   </head>
   <body>

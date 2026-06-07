@@ -13,3 +13,4 @@ firebase-admin==6.6.0
 openpyxl==3.1.5
 aiohttp==3.13.5
 olefile==0.47
+pymupdf>=1.27.2

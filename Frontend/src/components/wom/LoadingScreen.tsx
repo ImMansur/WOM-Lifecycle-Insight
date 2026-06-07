@@ -1,14 +1,14 @@
 import { Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 
-export function LoadingScreen({ 
-  onFinished, 
+export function LoadingScreen({
+  onFinished,
   progressValue,
   title = "WOM",
   subtitle = "Lifecycle",
   statusText = "Initializing Environment",
   subStatusText = "Secure Handshake...",
-}: { 
+}: {
   onFinished?: () => void;
   progressValue?: number;
   title?: string;
@@ -57,11 +57,7 @@ export function LoadingScreen({
           <div className="absolute inset-0 rounded-full border-4 border-primary/20 border-t-primary animate-spin" />
           {/* Inner pulsating logo area */}
           <div className="absolute inset-2 rounded-full bg-white shadow-xl flex items-center justify-center p-3 animate-pulse">
-            <img
-              src="/logo.png"
-              alt="WOM Logo"
-              className="size-full object-contain"
-            />
+            <img src="/logo.png" alt="WOM Logo" className="size-full object-contain" />
           </div>
         </div>
 
@@ -79,9 +75,9 @@ export function LoadingScreen({
               {Math.min(100, Math.round(displayProgress))}%
             </div>
           </div>
-          
+
           <div className="h-1 w-full bg-muted/30 rounded-full overflow-hidden">
-            <div 
+            <div
               className="h-full bg-primary transition-all duration-300 ease-out"
               style={{ width: `${displayProgress}%` }}
             />

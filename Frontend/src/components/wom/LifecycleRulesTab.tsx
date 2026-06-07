@@ -65,7 +65,8 @@ const PRIORITY_RULES: Rule[] = [
   {
     id: "overdue",
     title: "Expired / Overdue",
-    description: "Certificate date + 60 months is before today's date. Customer must be contacted immediately.",
+    description:
+      "Certificate date + 60 months is before today's date. Customer must be contacted immediately.",
     value: "Immediate",
     tone: "destructive",
   },
@@ -88,7 +89,8 @@ const PRIORITY_RULES: Rule[] = [
   {
     id: "ok",
     title: "Within Lifecycle",
-    description: "More than 18 months remaining. No action required. Record is archived for visibility.",
+    description:
+      "More than 18 months remaining. No action required. Record is archived for visibility.",
     value: "Monitor",
     tone: "success",
   },
@@ -221,7 +223,9 @@ export function LifecycleRulesTab() {
                       {rule.value}
                     </span>
                   </div>
-                  <p className="text-sm text-muted-foreground leading-relaxed">{rule.description}</p>
+                  <p className="text-sm text-muted-foreground leading-relaxed">
+                    {rule.description}
+                  </p>
                   {rule.note && (
                     <div className="mt-3 flex items-center gap-1.5 text-[11px] text-muted-foreground/70 font-mono">
                       <Info className="size-3" />
@@ -340,7 +344,9 @@ export function LifecycleRulesTab() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-3 mb-1.5">
-                      <h3 className="font-display text-sm font-bold text-foreground">{stage.label}</h3>
+                      <h3 className="font-display text-sm font-bold text-foreground">
+                        {stage.label}
+                      </h3>
                       <span className="rounded-full bg-success/10 border border-success/20 px-2 py-0.5 font-mono text-[10px] font-bold text-success flex items-center gap-1">
                         <CheckCircle2 className="size-2.5" />
                         Active
@@ -349,7 +355,9 @@ export function LifecycleRulesTab() {
                         {stage.tech}
                       </span>
                     </div>
-                    <p className="text-sm text-muted-foreground leading-relaxed">{stage.description}</p>
+                    <p className="text-sm text-muted-foreground leading-relaxed">
+                      {stage.description}
+                    </p>
                   </div>
                 </div>
               ))}
@@ -376,12 +384,11 @@ export function LifecycleRulesTab() {
           <div className="overflow-hidden rounded-2xl border border-border/50 bg-background/20 backdrop-blur-md shadow-xl">
             <div className="divide-y divide-border/30">
               {ACCEPTED_FORMATS.map((fmt) => (
-                <div
-                  key={fmt.ext}
-                  className="flex items-center gap-5 px-6 py-4"
-                >
+                <div key={fmt.ext} className="flex items-center gap-5 px-6 py-4">
                   <div className="size-10 rounded-xl border border-border/50 bg-foreground/[0.03] grid place-items-center shrink-0">
-                    <FileText className={`size-4 ${fmt.supported ? "text-primary" : "text-muted-foreground/40"}`} />
+                    <FileText
+                      className={`size-4 ${fmt.supported ? "text-primary" : "text-muted-foreground/40"}`}
+                    />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-bold text-foreground font-mono">{fmt.ext}</div>

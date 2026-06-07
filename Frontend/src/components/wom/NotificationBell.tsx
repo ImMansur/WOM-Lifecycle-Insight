@@ -33,12 +33,7 @@ export function NotificationBell() {
           className="relative rounded-full p-2 text-muted-foreground hover:text-primary transition-colors hover:bg-muted/50 focus:outline-none"
           aria-label="Notifications"
         >
-          <Bell
-            className={cn(
-              "size-5 transition-all",
-              unreadCount > 0 && "text-primary"
-            )}
-          />
+          <Bell className={cn("size-5 transition-all", unreadCount > 0 && "text-primary")} />
           {unreadCount > 0 && (
             <span className="absolute right-1.5 top-1.5 flex size-2">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
@@ -80,9 +75,7 @@ export function NotificationBell() {
             <div className="flex flex-col items-center gap-2 py-12 text-center">
               <Bell className="size-10 text-muted-foreground/20" />
               <p className="text-sm font-semibold text-muted-foreground">No notifications yet</p>
-              <p className="text-xs text-muted-foreground/50">
-                Upload files to see results here
-              </p>
+              <p className="text-xs text-muted-foreground/50">Upload files to see results here</p>
             </div>
           ) : (
             notifications.map((n) => (
@@ -90,13 +83,17 @@ export function NotificationBell() {
                 key={n.id}
                 className={cn(
                   "flex gap-3 px-4 py-3 transition-colors hover:bg-muted/30",
-                  !n.read && "bg-primary/[0.03]"
+                  !n.read && "bg-primary/[0.03]",
                 )}
               >
                 <div
                   className={cn(
                     "mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full",
-                    n.status === "success" ? "bg-emerald-500/10" : n.status === "warning" ? "bg-amber-500/10" : "bg-red-500/10"
+                    n.status === "success"
+                      ? "bg-emerald-500/10"
+                      : n.status === "warning"
+                        ? "bg-amber-500/10"
+                        : "bg-red-500/10",
                   )}
                 >
                   {n.status === "success" ? (
@@ -113,7 +110,11 @@ export function NotificationBell() {
                   <p
                     className={cn(
                       "text-xs mt-0.5 leading-snug",
-                      n.status === "success" ? "text-emerald-600" : n.status === "warning" ? "text-amber-600" : "text-red-500"
+                      n.status === "success"
+                        ? "text-emerald-600"
+                        : n.status === "warning"
+                          ? "text-amber-600"
+                          : "text-red-500",
                     )}
                   >
                     {n.message}

@@ -12,11 +12,7 @@ export default defineConfig({
     host: true,
     port: 8080,
   },
-  plugins: [
-    TanStackRouterVite({ autoCodeSplitting: true }),
-    react(),
-    tailwindcss(),
-  ],
+  plugins: [TanStackRouterVite({ autoCodeSplitting: true }), react(), tailwindcss()],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
@@ -28,15 +24,8 @@ export default defineConfig({
       output: {
         manualChunks: {
           "vendor-react": ["react", "react-dom"],
-          "vendor-firebase": [
-            "firebase/app",
-            "firebase/auth",
-            "firebase/firestore",
-          ],
-          "vendor-tanstack": [
-            "@tanstack/react-router",
-            "@tanstack/react-query",
-          ],
+          "vendor-firebase": ["firebase/app", "firebase/auth", "firebase/firestore"],
+          "vendor-tanstack": ["@tanstack/react-router", "@tanstack/react-query"],
           "vendor-ui": ["lucide-react", "@radix-ui/react-dialog", "@radix-ui/react-popover"],
         },
       },

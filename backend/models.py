@@ -186,3 +186,33 @@ class PatchAction(BaseModel):
 class AddComment(BaseModel):
     text: str
     author: str = "Admin"
+
+
+class CompressionLog(BaseModel):
+    id: str
+    filename: str
+    originalSize: int
+    compressedSize: int
+    savedSize: int
+    bypassDi: bool
+    pages: int
+    storageSavings: float
+    diSavings: float
+    totalSavings: float
+    timestamp: str
+
+
+class CompressionLogsSummary(BaseModel):
+    totalOriginalSize: int
+    totalCompressedSize: int
+    totalSavedSize: int
+    totalStorageSavings: float
+    totalDiSavings: float
+    totalSavings: float
+    fileCount: int
+
+
+class CompressionLogsResponse(BaseModel):
+    logs: List[CompressionLog]
+    summary: CompressionLogsSummary
+
