@@ -23,6 +23,58 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["ingest"])
 
+upload_progress_store: dict[str, dict] = {}
+
+def update_upload_progress(upload_id: str | None, filename: str, progress: int, substatus: str):
+    if not upload_id:
+        return
+    # limit size to prevent memory leak
+    if len(upload_progress_store) > 100:
+        # remove oldest entry
+        oldest = next(iter(upload_progress_store))
+        upload_progress_store.pop(oldest, None)
+
+    if upload_id not in upload_progress_store:
+        upload_progress_store[upload_id] = {
+            "progress": 0,
+            "status": "Processing documents...",
+            "substatus": "",
+            "files": {}
+        }
+    
+    store = upload_progress_store[upload_id]
+    store["files"][filename] = {
+        "progress": progress,
+        "substatus": substatus
+    }
+    
+    # Calculate overall progress
+    files = store["files"]
+    if files:
+        overall = sum(f["progress"] for f in files.values()) // len(files)
+        store["progress"] = overall
+        
+        # Build status/substatus
+        completed = sum(1 for f in files.values() if f["progress"] >= 100)
+        total = len(files)
+        store["status"] = f"Processed {completed} of {total} documents"
+        
+        # Substatus can show what's currently active
+        active_substatuses = [f"{Path(fn).name}: {f['substatus']}" for fn, f in files.items() if f["progress"] < 100]
+        if active_substatuses:
+            store["substatus"] = " | ".join(active_substatuses[:2])  # show up to 2 active files
+        else:
+            store["substatus"] = "Finalizing..."
+
+@router.get("/ingest/status/{upload_id}")
+async def get_ingest_status(upload_id: str):
+    return upload_progress_store.get(upload_id, {
+        "progress": 0,
+        "status": "Initializing...",
+        "substatus": "Preparing pipeline..."
+    })
+
+
 
 def log_optimization_event(filename: str, original_size: int, compressed_size: int, bypass_di: bool, pages: int) -> None:
     from datetime import datetime, timezone
@@ -115,7 +167,10 @@ def _get_combination_keys(rec: Recommendation) -> set[tuple[str, str, str, str, 
 
 
 @router.post("/ingest", response_model=IngestResponse, status_code=status.HTTP_200_OK)
-async def ingest_files(files: List[UploadFile] = File(...)):
+async def ingest_files(
+    files: List[UploadFile] = File(...),
+    upload_id: str | None = None,
+):
     """
     Upload one or more CoC documents (PDF, DOC, DOCX).
     Each file is processed through Document Intelligence + Azure OpenAI
@@ -161,13 +216,18 @@ async def ingest_files(files: List[UploadFile] = File(...)):
 
         valid_files.append((file_bytes, filename, ext))
 
+    # Initialize progress for all files in the batch
+    if upload_id:
+        for _, filename, _ in valid_files:
+            update_upload_progress(upload_id, filename, 0, "Queued...")
+
     # 2. Process valid files concurrently (concurrency limit = 5)
     import asyncio
     semaphore = asyncio.Semaphore(5)
 
     async def sem_process(file_bytes: bytes, filename: str, ext: str):
         async with semaphore:
-            return await _extract_and_compress_one_file(file_bytes, filename, None)
+            return await _extract_and_compress_one_file(file_bytes, filename, None, upload_id)
 
     tasks = [sem_process(fb, fn, ext) for fb, fn, ext in valid_files]
     gather_results = await asyncio.gather(*tasks)
@@ -235,8 +295,10 @@ async def _extract_and_compress_one_file(
     file_bytes: bytes,
     filename: str,
     blob_url: str | None,
+    upload_id: str | None = None,
 ) -> tuple[Recommendation | None, str | None]:
     """Runs PDF compression, storage uploading, and text extraction/AI recommendation."""
+    update_upload_progress(upload_id, filename, 5, "Starting processing...")
     ext = Path(filename).suffix.lower()
     source_type = ext.lstrip(".").upper()
 
@@ -247,6 +309,7 @@ async def _extract_and_compress_one_file(
 
     # Compress PDF if applicable
     if ext == ".pdf":
+        update_upload_progress(upload_id, filename, 15, "Compressing PDF document...")
         from services.pdf_compressor import compress_pdf_bytes
         compressed_bytes, pages = compress_pdf_bytes(file_bytes, filename)
         if len(compressed_bytes) < len(file_bytes):
@@ -254,6 +317,7 @@ async def _extract_and_compress_one_file(
             compressed_size = len(file_bytes)
             # Re-upload compressed version to Blob Storage
             try:
+                update_upload_progress(upload_id, filename, 25, "Uploading compressed PDF...")
                 from services.blob_storage import upload_file
                 upload_file(file_bytes, filename)
             except Exception as e:
@@ -261,6 +325,7 @@ async def _extract_and_compress_one_file(
 
     try:
         converted_docx_name: str | None = None
+        update_upload_progress(upload_id, filename, 35, "Extracting text layers (OCR)...")
         if ext in {".doc", ".docx"}:
             docx_text = extract_text_from_docx(file_bytes)
             if len(docx_text.strip()) >= 100:
@@ -274,6 +339,7 @@ async def _extract_and_compress_one_file(
         else:
             extracted_text, is_ocr_needed = await extract_text(file_bytes, filename)
 
+        update_upload_progress(upload_id, filename, 65, "Analyzing with OpenAI...")
         recommendation = await process_document(
             file_bytes=file_bytes,
             filename=filename,
@@ -290,10 +356,12 @@ async def _extract_and_compress_one_file(
             est_pages = max(1, len(extracted_text) // 1500)
             log_optimization_event(filename, original_size, original_size, bypass_di=True, pages=est_pages)
 
+        update_upload_progress(upload_id, filename, 100, "Completed")
         return recommendation, None
 
     except Exception as exc:
         logger.exception("Unexpected error processing %s", filename)
+        update_upload_progress(upload_id, filename, 100, "Failed")
         return None, f"{filename}: processing failed — {exc}"
 
 
@@ -302,6 +370,7 @@ async def _process_one_file(
     filename: str,
     blob_url: str | None,
     existing_by_combo: dict,
+    upload_id: str | None = None,
 ) -> tuple[Recommendation | None, PendingDuplicate | None, str | None]:
     """
     Run the full extraction→AI→dedup pipeline for a single file.
@@ -309,7 +378,7 @@ async def _process_one_file(
     Returns (recommendation, pending_duplicate, error_message).  Exactly one
     of the three will be non-None.
     """
-    rec, err = await _extract_and_compress_one_file(file_bytes, filename, blob_url)
+    rec, err = await _extract_and_compress_one_file(file_bytes, filename, blob_url, upload_id)
     if err:
         return None, None, err
     if not rec:
@@ -349,6 +418,7 @@ async def ingest_chunk(
     filename: str = Form(...),
     chunk_index: int = Form(...),
     total_chunks: int = Form(...),
+    upload_id: str | None = None,
 ):
     """
     Accept one chunk of a larger file upload.
@@ -379,9 +449,15 @@ async def ingest_chunk(
 
     # Intermediate chunk: acknowledge and wait for more.
     if chunk_index < total_chunks - 1:
+        # Estimate upload progress of chunks
+        if upload_id:
+            pct = int(((chunk_index + 1) / total_chunks) * 100)
+            update_upload_progress(upload_id, filename, max(1, pct - 5), f"Uploading chunk {chunk_index + 1}/{total_chunks}...")
         return {"staged": True, "chunk_index": chunk_index, "total_chunks": total_chunks}
 
     # Final chunk: commit all staged blocks into one blob then process.
+    if upload_id:
+        update_upload_progress(upload_id, filename, 95, "Assembling document...")
     all_block_ids = [base64.b64encode(f"{i:08d}".encode()).decode() for i in range(total_chunks)]
     blob_url = commit_blocks(filename, all_block_ids)
 
@@ -395,7 +471,7 @@ async def ingest_chunk(
         for combo in _get_combination_keys(r):
             existing_by_combo[combo] = r
 
-    rec, dup, err = await _process_one_file(file_bytes, filename, blob_url, existing_by_combo)
+    rec, dup, err = await _process_one_file(file_bytes, filename, blob_url, existing_by_combo, upload_id)
 
     return IngestResponse(
         processed=1 if rec else 0,
@@ -429,7 +505,10 @@ async def get_upload_sas(filename: str):
 # ---------------------------------------------------------------------------
 
 @router.post("/ingest-from-blob", response_model=IngestResponse, status_code=status.HTTP_200_OK)
-async def ingest_from_blob(blob_names: list[str]):
+async def ingest_from_blob(
+    blob_names: list[str],
+    upload_id: str | None = None,
+):
     """
     Process files that have already been uploaded directly to Azure Blob
     Storage (via SAS URL).  Accepts a JSON array of blob names.
@@ -471,13 +550,18 @@ async def ingest_from_blob(blob_names: list[str]):
         blob_url = f"https://blob/{blob_name}"  # approximate real URL
         valid_downloads.append((file_bytes, blob_name, blob_url))
 
+    # Initialize progress for all files in the batch
+    if upload_id:
+        for _, filename, _ in valid_downloads:
+            update_upload_progress(upload_id, filename, 0, "Queued...")
+
     # 2. Process concurrently (concurrency limit = 5)
     import asyncio
     semaphore = asyncio.Semaphore(5)
 
     async def sem_process(file_bytes: bytes, filename: str, blob_url: str):
         async with semaphore:
-            return await _extract_and_compress_one_file(file_bytes, filename, blob_url)
+            return await _extract_and_compress_one_file(file_bytes, filename, blob_url, upload_id)
 
     tasks = [sem_process(fb, fn, bu) for fb, fn, bu in valid_downloads]
     gather_results = await asyncio.gather(*tasks)

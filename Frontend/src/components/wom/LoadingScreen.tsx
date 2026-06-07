@@ -1,5 +1,5 @@
 import { Loader2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export function LoadingScreen({
   onFinished,
@@ -16,31 +16,66 @@ export function LoadingScreen({
   statusText?: string;
   subStatusText?: string;
 }) {
-  const [internalProgress, setInternalProgress] = useState(0);
+  const [displayProgress, setDisplayProgress] = useState(0);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const displayProgress = progressValue !== undefined ? progressValue : internalProgress;
-
+  // Disable page scroll when loading screen is active
   useEffect(() => {
-    if (progressValue !== undefined) {
-      if (progressValue >= 100) {
-        onFinished?.();
-      }
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = originalOverflow;
+    };
+  }, []);
+
+  // Core progress logic
+  useEffect(() => {
+    // No progressValue provided → use the self-animating mode (login screen etc.)
+    if (progressValue === undefined) {
+      timerRef.current = setInterval(() => {
+        setDisplayProgress((prev) => {
+          if (prev >= 100) {
+            if (timerRef.current) clearInterval(timerRef.current);
+            onFinished?.();
+            return 100;
+          }
+          return prev + (Math.random() * 20 + 5);
+        });
+      }, 120);
+      return () => {
+        if (timerRef.current) clearInterval(timerRef.current);
+      };
+    }
+
+    // progressValue is provided (upload screen)
+    if (progressValue >= 100) {
+      // Done! Snap to 100%
+      setDisplayProgress(100);
       return;
     }
 
-    const interval = setInterval(() => {
-      setInternalProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          onFinished?.();
-          return 100;
-        }
-        return prev + (Math.random() * 20 + 5); // Faster, more consistent progress
-      });
-    }, 120);
+    // Jump displayProgress up to at least progressValue (the "floor")
+    setDisplayProgress((prev) => Math.max(prev, progressValue));
 
-    return () => clearInterval(interval);
-  }, [onFinished, progressValue]);
+    // Start a slow climb timer from current position toward 95%
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => {
+      setDisplayProgress((prev) => {
+        if (prev >= 95) {
+          if (timerRef.current) clearInterval(timerRef.current);
+          return 95;
+        }
+        // Slow asymptotic climb: the closer to 95, the slower it gets
+        const remaining = 95 - prev;
+        const increment = Math.max(0.15, remaining * 0.02 + Math.random() * 0.4);
+        return Math.min(95, prev + increment);
+      });
+    }, 200);
+
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [progressValue, onFinished]);
 
   return (
     <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-background">
@@ -78,8 +113,8 @@ export function LoadingScreen({
 
           <div className="h-1 w-full bg-muted/30 rounded-full overflow-hidden">
             <div
-              className="h-full bg-primary transition-all duration-300 ease-out"
-              style={{ width: `${displayProgress}%` }}
+              className="h-full bg-primary transition-all duration-500 ease-out"
+              style={{ width: `${Math.min(100, displayProgress)}%` }}
             />
           </div>
         </div>

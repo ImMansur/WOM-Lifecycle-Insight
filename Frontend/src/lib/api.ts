@@ -42,13 +42,26 @@ export async function fetchRecommendations(): Promise<RecommendationsResponse> {
   if (!res.ok) throw new Error(`Failed to fetch recommendations: ${res.statusText}`);
   return res.json();
 }
+export interface IngestProgress {
+  progress: number;
+  status: string;
+  substatus: string;
+  files?: Record<string, { progress: number; substatus: string }>;
+}
 
-export async function ingestFiles(files: File[]): Promise<IngestResponse> {
+export async function fetchIngestStatus(uploadId: string): Promise<IngestProgress> {
+  const res = await fetch(`${BASE}/api/ingest/status/${encodeURIComponent(uploadId)}`);
+  if (!res.ok) throw new Error("Failed to fetch ingest status");
+  return res.json();
+}
+
+export async function ingestFiles(files: File[], uploadId?: string): Promise<IngestResponse> {
   const form = new FormData();
   for (const file of files) {
     form.append("files", file);
   }
-  const res = await fetch(`${BASE}/api/ingest`, {
+  const url = uploadId ? `${BASE}/api/ingest?upload_id=${encodeURIComponent(uploadId)}` : `${BASE}/api/ingest`;
+  const res = await fetch(url, {
     method: "POST",
     body: form,
   });
@@ -68,7 +81,7 @@ const CHUNK_SIZE = 3.5 * 1024 * 1024;
  * CORS required). On the final chunk the backend assembles and processes the
  * file, returning the normal IngestResponse.
  */
-export async function uploadFileInChunks(file: File): Promise<IngestResponse> {
+export async function uploadFileInChunks(file: File, uploadId?: string): Promise<IngestResponse> {
   const totalChunks = Math.max(1, Math.ceil(file.size / CHUNK_SIZE));
 
   for (let i = 0; i < totalChunks; i++) {
@@ -81,7 +94,8 @@ export async function uploadFileInChunks(file: File): Promise<IngestResponse> {
     form.append("chunk_index", String(i));
     form.append("total_chunks", String(totalChunks));
 
-    const res = await fetch(`${BASE}/api/ingest-chunk`, {
+    const url = uploadId ? `${BASE}/api/ingest-chunk?upload_id=${encodeURIComponent(uploadId)}` : `${BASE}/api/ingest-chunk`;
+    const res = await fetch(url, {
       method: "POST",
       body: form,
     });

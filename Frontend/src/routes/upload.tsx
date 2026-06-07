@@ -96,20 +96,22 @@ function UploadPage() {
         errors: [],
       };
 
-      setUploadProgress(0);
+      // Jump to 35% — compression/upload phase complete
+      setUploadProgress(35);
+      setUploadStatus("Processing Documents");
+      setUploadSubStatus("Extracting & analyzing with AI Engine...");
 
+      // Process files — LoadingScreen will slowly climb from 35% → 95% on its own
       for (let i = 0; i < total; i++) {
         const file = filesToUpload[i];
-        setUploadStatus(`Processing Document ${i + 1} of ${total}`);
-        setUploadSubStatus(`Extracting & compressing '${file.name}'...`);
-
+        if (total > 1) {
+          setUploadSubStatus(`Analyzing document ${i + 1} of ${total}...`);
+        }
         try {
           let result: IngestResponse;
           if (!isLocal) {
-            // Chunked upload for Vercel
             result = await uploadFileInChunks(file);
           } else {
-            // Direct upload for local dev
             result = await ingestFiles([file]);
           }
 
@@ -120,16 +122,22 @@ function UploadPage() {
         } catch (err: any) {
           combined.errors.push(`${file.name}: processing failed — ${err.message || err}`);
         }
-
-        setUploadProgress(Math.round(((i + 1) / total) * 100));
       }
 
       return combined;
     },
     onMutate: () => {
+      setUploadProgress(0);
+      setUploadStatus("Uploading Documents");
+      setUploadSubStatus("Compressing & preparing files...");
       setIsUploading(true);
     },
     onSuccess: (data) => {
+      // Snap to 100%
+      setUploadProgress(100);
+      setUploadStatus("Processing Complete");
+      setUploadSubStatus("Redirecting to dashboard...");
+
       qc.invalidateQueries({ queryKey: ["recommendations"] });
 
       for (const rec of data.recommendations) {
@@ -155,11 +163,16 @@ function UploadPage() {
         setSavedCount(data.processed);
         setPendingDuplicates(data.pendingDuplicates);
         setIsUploading(false);
-        return; // do NOT navigate yet
+        setUploadProgress(0);
+        return;
       }
 
-      setIsUploading(false);
-      navigate({ to: "/dashboard", search: { tab: "Home" } });
+      // Wait a moment at 100% so the user sees completion, then navigate
+      setTimeout(() => {
+        setIsUploading(false);
+        setUploadProgress(0);
+        navigate({ to: "/dashboard", search: { tab: "Home" } });
+      }, 800);
     },
     onError: (err: Error) => {
       addNotification({
@@ -168,6 +181,7 @@ function UploadPage() {
         message: `Upload failed · ${err.message}`,
       });
       setIsUploading(false);
+      setUploadProgress(0);
     },
   });
 

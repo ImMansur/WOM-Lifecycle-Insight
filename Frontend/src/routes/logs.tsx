@@ -10,7 +10,6 @@ import {
   Sparkles,
   Database,
   Coins,
-  Cpu,
   Trash2,
   FileCheck,
   TrendingUp,
@@ -124,7 +123,6 @@ function LogsPage() {
           day: "numeric",
         }),
         "Storage Saved ($)": parseFloat(cumulativeStorage.toFixed(2)),
-        "Azure DI Saved ($)": parseFloat(cumulativeDi.toFixed(2)),
         "Total Saved ($)": parseFloat(cumulativeTotal.toFixed(2)),
       };
     });
@@ -172,7 +170,7 @@ function LogsPage() {
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {/* Card 1: Files Processed */}
           <Card className="p-6 rounded-3xl border border-border/40 bg-surface/50 backdrop-blur-md relative overflow-hidden shadow-xl group hover:shadow-primary/5 hover:border-primary/20 transition-all duration-300">
             <div className="flex justify-between items-start">
@@ -213,25 +211,6 @@ function LogsPage() {
             </p>
           </Card>
 
-          {/* Card 3: Azure DI Saved */}
-          <Card className="p-6 rounded-3xl border border-border/40 bg-surface/50 backdrop-blur-md relative overflow-hidden shadow-xl group hover:shadow-primary/5 hover:border-primary/20 transition-all duration-300">
-            <div className="flex justify-between items-start">
-              <div className="space-y-1">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
-                  Azure DI Saved
-                </p>
-                <h3 className="text-3xl font-black tracking-tight text-foreground font-display mt-1">
-                  ${summary?.totalDiSavings.toFixed(2) || "0.00"}
-                </h3>
-              </div>
-              <div className="p-3 bg-blue-500/10 rounded-2xl text-blue-500">
-                <Cpu className="size-6 group-hover:scale-110 transition-transform" />
-              </div>
-            </div>
-            <p className="text-[11px] text-muted-foreground/80 mt-3 font-semibold">
-              Bypassed or stayed inside F0 Free Tier
-            </p>
-          </Card>
 
           {/* Card 4: Total Savings */}
           <Card className="p-6 rounded-3xl border border-border/40 bg-surface/50 backdrop-blur-md relative overflow-hidden shadow-xl group hover:shadow-primary/5 hover:border-primary/20 transition-all duration-300">
@@ -295,13 +274,7 @@ function LogsPage() {
                   fillOpacity={1}
                   fill="url(#colorTotal)"
                 />
-                <Area
-                  type="monotone"
-                  dataKey="Azure DI Saved ($)"
-                  stroke="#3b82f6"
-                  strokeWidth={1.5}
-                  fillOpacity={0}
-                />
+
                 <Area
                   type="monotone"
                   dataKey="Storage Saved ($)"
