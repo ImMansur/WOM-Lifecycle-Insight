@@ -90,6 +90,9 @@ function UploadPage() {
       // Local dev: POST all files directly to the backend (no size limit).
       return ingestFiles(filesToUpload);
     },
+    onMutate: () => {
+      setIsUploading(true);
+    },
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ["recommendations"] });
 
@@ -114,10 +117,12 @@ function UploadPage() {
       if (data.pendingDuplicates && data.pendingDuplicates.length > 0) {
         setSavedCount(data.processed);
         setPendingDuplicates(data.pendingDuplicates);
+        setIsUploading(false);
         return; // do NOT navigate yet
       }
 
-      navigate({ to: "/dashboard" });
+      setIsUploading(false);
+      navigate({ to: "/dashboard", search: { tab: "Home" } });
     },
     onError: (err: Error) => {
       addNotification({
@@ -125,13 +130,10 @@ function UploadPage() {
         status: "error",
         message: `Upload failed · ${err.message}`,
       });
+      setIsUploading(false);
     },
   });
 
-  useEffect(() => {
-    setIsUploading(mutation.isPending);
-    return () => setIsUploading(false);
-  }, [mutation.isPending, setIsUploading]);
 
   const confirmMutation = useMutation({
     mutationFn: confirmIngestUpdates,
@@ -199,242 +201,233 @@ function UploadPage() {
   };
 
   if (mutation.isPending) {
-    return (
-      <LoadingScreen 
-        progressValue={progress}
-        title="Document"
-        subtitle="Intelligence"
-        statusText={`Processing ${files.length} document${files.length !== 1 ? 's' : ''}`}
-        subStatusText="Extracting Data with AI Engine..."
-      />
-    );
+    return null;
   }
 
   return (
     <div className="w-full flex-1 flex flex-col items-center justify-center p-8">
-        {uploadResult ? (
-          <div className="w-full max-w-3xl space-y-8 animate-in fade-in zoom-in-95 duration-500">
-            <div className="text-center space-y-4">
-              {uploadResult.errors && uploadResult.errors.length > 0 ? (
-                <div className="mx-auto flex size-20 items-center justify-center rounded-full bg-amber-500/10 ring-8 ring-amber-500/5 mb-6">
-                  <AlertTriangle className="size-10 text-amber-500" />
+      {uploadResult ? (
+        <div className="w-full max-w-3xl space-y-8 animate-in fade-in zoom-in-95 duration-500">
+          <div className="text-center space-y-4">
+            {uploadResult.errors && uploadResult.errors.length > 0 ? (
+              <div className="mx-auto flex size-20 items-center justify-center rounded-full bg-amber-500/10 ring-8 ring-amber-500/5 mb-6">
+                <AlertTriangle className="size-10 text-amber-500" />
+              </div>
+            ) : (
+              <div className="mx-auto flex size-20 items-center justify-center rounded-full bg-green-500/10 ring-8 ring-green-500/5 mb-6">
+                <CheckCircle2 className="size-10 text-green-500" />
+              </div>
+            )}
+            <h1 className="font-display text-4xl font-black tracking-tight">Upload Logs</h1>
+            <p className="text-muted-foreground">
+              Processed {uploadResult.processed} files. Generated {uploadResult.recommendations?.length || 0} recommendations.
+            </p>
+          </div>
+
+          <div className={`space-y-4 p-6 rounded-3xl border ${uploadResult.errors && uploadResult.errors.length > 0 ? 'bg-secondary/30 border-border/40' : 'bg-green-500/5 border-green-500/20'}`}>
+            {uploadResult.errors && uploadResult.errors.length > 0 ? (
+              <>
+                <h3 className="font-semibold flex items-center gap-2">
+                  <ShieldAlert className="size-5 text-destructive" />
+                  {uploadResult.errors.length} Warning{uploadResult.errors.length !== 1 ? 's' : ''}
+                </h3>
+                <div className="max-h-80 overflow-y-auto pr-2 space-y-3">
+                  {uploadResult.errors.map((err, idx) => (
+                    <div key={idx} className="rounded-xl border border-destructive/20 bg-destructive/5 p-4 text-sm text-destructive font-mono">
+                      {err}
+                    </div>
+                  ))}
                 </div>
-              ) : (
-                <div className="mx-auto flex size-20 items-center justify-center rounded-full bg-green-500/10 ring-8 ring-green-500/5 mb-6">
-                  <CheckCircle2 className="size-10 text-green-500" />
-                </div>
-              )}
-              <h1 className="font-display text-4xl font-black tracking-tight">Upload Logs</h1>
-              <p className="text-muted-foreground">
-                Processed {uploadResult.processed} files. Generated {uploadResult.recommendations?.length || 0} recommendations.
+              </>
+            ) : (
+              <h3 className="font-semibold flex items-center gap-2 text-green-600 dark:text-green-500">
+                <CheckCircle2 className="size-5" />
+                No warnings. All documents processed successfully!
+              </h3>
+            )}
+          </div>
+
+          <div className="flex justify-center pt-4 gap-4">
+            <Button
+              size="lg"
+              variant="outline"
+              onClick={() => { setUploadResult(null); setFiles([]); }}
+              className="font-bold px-8 h-14 rounded-xl text-lg"
+            >
+              Upload More
+            </Button>
+            <Button
+              size="lg"
+              onClick={() => navigate({ to: "/dashboard" })}
+              className="bg-primary hover:bg-primary/90 text-white font-bold px-8 h-14 rounded-xl text-lg shadow-xl shadow-primary/20"
+            >
+              Go to Dashboard
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="w-full max-w-[1600px] grid grid-cols-1 lg:grid-cols-12 gap-8 px-6 py-6 items-start animate-in fade-in zoom-in-95 duration-500">
+          {/* Left Column: Upload cockpit */}
+          <div className="lg:col-span-7 space-y-6">
+            <div className="space-y-2">
+              <h1 className="font-display text-3xl font-black tracking-tight text-[#0D1117] md:text-4xl">
+                Upload Certificates of Conformance
+              </h1>
+              <p className="text-sm text-muted-foreground font-medium">
+                Supported formats: PDF, DOC, DOCX. Upload certificates to parse and match them against rules.
               </p>
             </div>
 
-            <div className={`space-y-4 p-6 rounded-3xl border ${uploadResult.errors && uploadResult.errors.length > 0 ? 'bg-secondary/30 border-border/40' : 'bg-green-500/5 border-green-500/20'}`}>
-              {uploadResult.errors && uploadResult.errors.length > 0 ? (
-                <>
-                  <h3 className="font-semibold flex items-center gap-2">
-                    <ShieldAlert className="size-5 text-destructive" />
-                    {uploadResult.errors.length} Warning{uploadResult.errors.length !== 1 ? 's' : ''}
-                  </h3>
-                  <div className="max-h-80 overflow-y-auto pr-2 space-y-3">
-                    {uploadResult.errors.map((err, idx) => (
-                      <div key={idx} className="rounded-xl border border-destructive/20 bg-destructive/5 p-4 text-sm text-destructive font-mono">
-                        {err}
-                      </div>
-                    ))}
-                  </div>
-                </>
-              ) : (
-                <h3 className="font-semibold flex items-center gap-2 text-green-600 dark:text-green-500">
-                  <CheckCircle2 className="size-5" />
-                  No warnings. All documents processed successfully!
-                </h3>
-              )}
-            </div>
-
-            <div className="flex justify-center pt-4 gap-4">
-              <Button
-                size="lg"
-                variant="outline"
-                onClick={() => { setUploadResult(null); setFiles([]); }}
-                className="font-bold px-8 h-14 rounded-xl text-lg"
-              >
-                Upload More
-              </Button>
-              <Button
-                size="lg"
-                onClick={() => navigate({ to: "/dashboard" })}
-                className="bg-primary hover:bg-primary/90 text-white font-bold px-8 h-14 rounded-xl text-lg shadow-xl shadow-primary/20"
-              >
-                Go to Dashboard
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <div className="w-full max-w-[1600px] grid grid-cols-1 lg:grid-cols-12 gap-8 px-6 py-6 items-start animate-in fade-in zoom-in-95 duration-500">
-            {/* Left Column: Upload cockpit */}
-            <div className="lg:col-span-7 space-y-6">
-              <div className="space-y-2">
-                <h1 className="font-display text-3xl font-black tracking-tight text-[#0D1117] md:text-4xl">
-                  Upload Certificates of Conformance
-                </h1>
-                <p className="text-sm text-muted-foreground font-medium">
-                  Supported formats: PDF, DOC, DOCX. Upload certificates to parse and match them against rules.
-                </p>
-              </div>
-
-              {/* Upload Drop Zone Card */}
-              <div className="bg-surface/50 border border-border/40 p-6 rounded-3xl backdrop-blur-md shadow-xl">
-                <div
-                  onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-                  onDragLeave={(e) => { e.preventDefault(); setDragOver(false); }}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    setDragOver(false);
-                    addFiles(e.dataTransfer.files);
-                  }}
-                  onClick={() => inputRef.current?.click()}
-                  className={`cursor-pointer rounded-2xl border-2 border-dashed p-10 text-center transition-all ${
-                    dragOver 
-                      ? "border-primary bg-primary/5 scale-[1.01]" 
-                      : "border-border/60 bg-background/30 hover:border-primary/50 hover:bg-primary/5 hover:scale-[1.005]"
+            {/* Upload Drop Zone Card */}
+            <div className="bg-surface/50 border border-border/40 p-6 rounded-3xl backdrop-blur-md shadow-xl">
+              <div
+                onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                onDragLeave={(e) => { e.preventDefault(); setDragOver(false); }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setDragOver(false);
+                  addFiles(e.dataTransfer.files);
+                }}
+                onClick={() => inputRef.current?.click()}
+                className={`cursor-pointer rounded-2xl border-2 border-dashed p-10 text-center transition-all ${dragOver
+                    ? "border-primary bg-primary/5 scale-[1.01]"
+                    : "border-border/60 bg-background/30 hover:border-primary/50 hover:bg-primary/5 hover:scale-[1.005]"
                   }`}
-                >
-                  <input
-                    type="file"
-                    multiple
-                    accept=".pdf,.doc,.docx"
-                    className="hidden"
-                    ref={inputRef}
-                    onChange={(e) => e.target.files && addFiles(e.target.files)}
-                  />
-                  <div className="mx-auto mb-5 flex size-16 items-center justify-center rounded-2xl bg-secondary shadow-md transition-transform duration-300 hover:scale-105">
-                    <Upload className="size-6 text-primary animate-bounce" />
-                  </div>
-                  <p className="text-base font-bold text-foreground">Drag & drop files here</p>
-                  <p className="mt-1.5 text-xs text-muted-foreground font-medium">or click to browse from your computer</p>
-                  <p className="mt-3 text-[10px] text-muted-foreground/60 uppercase tracking-widest font-mono">PDF, DOC, DOCX up to 200MB</p>
+              >
+                <input
+                  type="file"
+                  multiple
+                  accept=".pdf,.doc,.docx"
+                  className="hidden"
+                  ref={inputRef}
+                  onChange={(e) => e.target.files && addFiles(e.target.files)}
+                />
+                <div className="mx-auto mb-5 flex size-16 items-center justify-center rounded-2xl bg-secondary shadow-md transition-transform duration-300 hover:scale-105">
+                  <Upload className="size-6 text-primary animate-bounce" />
                 </div>
-              </div>
-
-              {/* Selected Files Card */}
-              {files.length > 0 && (
-                <div className="space-y-4 bg-surface/50 border border-border/40 p-6 rounded-3xl backdrop-blur-md shadow-xl animate-in fade-in slide-in-from-top-4 duration-300">
-                  <div className="flex items-center justify-between border-b border-border/30 pb-3">
-                    <h3 className="font-bold text-sm text-foreground flex items-center gap-2">
-                      <span className="flex size-5 items-center justify-center rounded-full bg-primary/10 text-xs text-primary font-bold">
-                        {files.length}
-                      </span>
-                      File{files.length !== 1 ? 's' : ''} Queued
-                    </h3>
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
-                      onClick={() => setFiles([])} 
-                      className="h-8 text-xs font-semibold text-destructive hover:text-destructive hover:bg-destructive/10 rounded-xl px-3"
-                    >
-                      Clear all
-                    </Button>
-                  </div>
-                  <div className="max-h-60 overflow-y-auto pr-1 space-y-2">
-                    {files.map((f) => (
-                      <div key={f.name} className="flex items-center justify-between rounded-xl border border-border/60 bg-background/50 px-4 py-3 shadow-sm group hover:border-primary/30 transition-colors">
-                        <div className="flex items-center gap-3 overflow-hidden">
-                          <FileText className="size-4 shrink-0 text-primary transition-transform group-hover:scale-110" />
-                          <span className="truncate text-xs font-semibold text-foreground" title={f.name}>{f.name}</span>
-                        </div>
-                        <div className="flex items-center gap-3 shrink-0">
-                          <span className="text-[10px] font-mono font-medium text-muted-foreground">{(f.size / 1024 / 1024).toFixed(1)} MB</span>
-                          <button 
-                            onClick={(e) => { e.stopPropagation(); removeFile(f.name); }} 
-                            className="p-1 rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-all"
-                          >
-                            <X className="size-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Error alert */}
-              {mutation.isError && (
-                <div className="flex items-center gap-3 rounded-2xl border border-destructive/30 bg-destructive/5 p-4 text-xs font-semibold text-destructive shadow-sm">
-                  <AlertTriangle className="size-4 shrink-0" />
-                  {(mutation.error as Error).message}
-                </div>
-              )}
-
-              {/* Action Button */}
-              <div className="flex justify-end">
-                <Button
-                  size="lg"
-                  onClick={handleProcess}
-                  disabled={files.length === 0 || mutation.isPending}
-                  className="bg-primary hover:bg-primary/95 text-white font-bold px-8 h-14 rounded-2xl text-base shadow-xl shadow-primary/10 w-full sm:w-auto transition-all duration-300 hover:-translate-y-0.5 active:translate-y-0"
-                >
-                  <CloudUpload className="mr-2.5 size-5" />
-                  Process {files.length > 0 ? `${files.length} ` : ''}Document{files.length === 1 ? '' : 's'}
-                </Button>
+                <p className="text-base font-bold text-foreground">Drag & drop files here</p>
+                <p className="mt-1.5 text-xs text-muted-foreground font-medium">or click to browse from your computer</p>
+                <p className="mt-3 text-[10px] text-muted-foreground/60 uppercase tracking-widest font-mono">PDF, DOC, DOCX up to 200MB</p>
               </div>
             </div>
 
-            {/* Right Column: Engine Details Panel */}
-            <div className="lg:col-span-5 space-y-6 lg:mt-16">
-              <div className="bg-surface/50 border border-border/40 p-6 rounded-3xl backdrop-blur-md shadow-xl space-y-5">
-                <h3 className="font-display font-bold text-lg text-foreground flex items-center gap-2">
-                  <Zap className="size-5 text-primary animate-pulse" /> Ingestion Pipeline
-                </h3>
-                <p className="text-xs text-muted-foreground leading-relaxed font-medium">
-                  Each certificate is run through an advanced document classification and data-extraction sequence to build a structured equipment history.
-                </p>
+            {/* Selected Files Card */}
+            {files.length > 0 && (
+              <div className="space-y-4 bg-surface/50 border border-border/40 p-6 rounded-3xl backdrop-blur-md shadow-xl animate-in fade-in slide-in-from-top-4 duration-300">
+                <div className="flex items-center justify-between border-b border-border/30 pb-3">
+                  <h3 className="font-bold text-sm text-foreground flex items-center gap-2">
+                    <span className="flex size-5 items-center justify-center rounded-full bg-primary/10 text-xs text-primary font-bold">
+                      {files.length}
+                    </span>
+                    File{files.length !== 1 ? 's' : ''} Queued
+                  </h3>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setFiles([])}
+                    className="h-8 text-xs font-semibold text-destructive hover:text-destructive hover:bg-destructive/10 rounded-xl px-3"
+                  >
+                    Clear all
+                  </Button>
+                </div>
+                <div className="max-h-60 overflow-y-auto pr-1 space-y-2">
+                  {files.map((f) => (
+                    <div key={f.name} className="flex items-center justify-between rounded-xl border border-border/60 bg-background/50 px-4 py-3 shadow-sm group hover:border-primary/30 transition-colors">
+                      <div className="flex items-center gap-3 overflow-hidden">
+                        <FileText className="size-4 shrink-0 text-primary transition-transform group-hover:scale-110" />
+                        <span className="truncate text-xs font-semibold text-foreground" title={f.name}>{f.name}</span>
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0">
+                        <span className="text-[10px] font-mono font-medium text-muted-foreground">{(f.size / 1024 / 1024).toFixed(1)} MB</span>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); removeFile(f.name); }}
+                          className="p-1 rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-all"
+                        >
+                          <X className="size-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
-                <div className="space-y-4">
-                  {/* Step 1 */}
-                  <div className="flex gap-4 items-start p-4 rounded-2xl bg-background/40 border border-border/30 hover:border-primary/20 hover:bg-background/80 transition-all">
-                    <div className="flex size-9 items-center justify-center rounded-xl bg-primary/10 text-primary shrink-0">
-                      <FileText className="size-4.5" />
-                    </div>
-                    <div className="space-y-1">
-                      <h4 className="text-xs font-bold text-foreground">1. AI-Powered Extraction</h4>
-                      <p className="text-[11px] text-muted-foreground leading-relaxed font-medium">
-                        Retrieve Customer Names, Sales Orders, Purchase Orders, and serial records instantly with Azure AI Document Intelligence.
-                      </p>
-                    </div>
+            {/* Error alert */}
+            {mutation.isError && (
+              <div className="flex items-center gap-3 rounded-2xl border border-destructive/30 bg-destructive/5 p-4 text-xs font-semibold text-destructive shadow-sm">
+                <AlertTriangle className="size-4 shrink-0" />
+                {(mutation.error as Error).message}
+              </div>
+            )}
+
+            {/* Action Button */}
+            <div className="flex justify-end">
+              <Button
+                size="lg"
+                onClick={handleProcess}
+                disabled={files.length === 0 || mutation.isPending}
+                className="bg-primary hover:bg-primary/95 text-white font-bold px-8 h-14 rounded-2xl text-base shadow-xl shadow-primary/10 w-full sm:w-auto transition-all duration-300 hover:-translate-y-0.5 active:translate-y-0"
+              >
+                <CloudUpload className="mr-2.5 size-5" />
+                Process {files.length > 0 ? `${files.length} ` : ''}Document{files.length === 1 ? '' : 's'}
+              </Button>
+            </div>
+          </div>
+
+          {/* Right Column: Engine Details Panel */}
+          <div className="lg:col-span-5 space-y-6 lg:mt-16">
+            <div className="bg-surface/50 border border-border/40 p-6 rounded-3xl backdrop-blur-md shadow-xl space-y-5">
+              <h3 className="font-display font-bold text-lg text-foreground flex items-center gap-2">
+                <Zap className="size-5 text-primary animate-pulse" /> Ingestion Pipeline
+              </h3>
+              <p className="text-xs text-muted-foreground leading-relaxed font-medium">
+                Each certificate is run through an advanced document classification and data-extraction sequence to build a structured equipment history.
+              </p>
+
+              <div className="space-y-4">
+                {/* Step 1 */}
+                <div className="flex gap-4 items-start p-4 rounded-2xl bg-background/40 border border-border/30 hover:border-primary/20 hover:bg-background/80 transition-all">
+                  <div className="flex size-9 items-center justify-center rounded-xl bg-primary/10 text-primary shrink-0">
+                    <FileText className="size-4.5" />
                   </div>
-
-                  {/* Step 2 */}
-                  <div className="flex gap-4 items-start p-4 rounded-2xl bg-background/40 border border-border/30 hover:border-primary/20 hover:bg-background/80 transition-all">
-                    <div className="flex size-9 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-500 shrink-0">
-                      <ShieldAlert className="size-4.5" />
-                    </div>
-                    <div className="space-y-1">
-                      <h4 className="text-xs font-bold text-foreground">2. High Accuracy OCR Engine</h4>
-                      <p className="text-[11px] text-muted-foreground leading-relaxed font-medium">
-                        Scanned or flat documents undergo robust Optical Character Recognition to extract text layers and confirm data alignment.
-                      </p>
-                    </div>
+                  <div className="space-y-1">
+                    <h4 className="text-xs font-bold text-foreground">1. AI-Powered Extraction</h4>
+                    <p className="text-[11px] text-muted-foreground leading-relaxed font-medium">
+                      Retrieve Customer Names, Sales Orders, Purchase Orders, and serial records instantly with Azure AI Document Intelligence.
+                    </p>
                   </div>
+                </div>
 
-                  {/* Step 3 */}
-                  <div className="flex gap-4 items-start p-4 rounded-2xl bg-background/40 border border-border/30 hover:border-primary/20 hover:bg-background/80 transition-all">
-                    <div className="flex size-9 items-center justify-center rounded-xl bg-amber-500/10 text-amber-500 shrink-0">
-                      <Wrench className="size-4.5" />
-                    </div>
-                    <div className="space-y-1">
-                      <h4 className="text-xs font-bold text-foreground">3. Lifecycle Opportunity Matching</h4>
-                      <p className="text-[11px] text-muted-foreground leading-relaxed font-medium">
-                        Verify certificate dates against corporate database rules to compute precise service intervals and prompt upcoming recertifications.
-                      </p>
-                    </div>
+                {/* Step 2 */}
+                <div className="flex gap-4 items-start p-4 rounded-2xl bg-background/40 border border-border/30 hover:border-primary/20 hover:bg-background/80 transition-all">
+                  <div className="flex size-9 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-500 shrink-0">
+                    <ShieldAlert className="size-4.5" />
+                  </div>
+                  <div className="space-y-1">
+                    <h4 className="text-xs font-bold text-foreground">2. High Accuracy OCR Engine</h4>
+                    <p className="text-[11px] text-muted-foreground leading-relaxed font-medium">
+                      Scanned or flat documents undergo robust Optical Character Recognition to extract text layers and confirm data alignment.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Step 3 */}
+                <div className="flex gap-4 items-start p-4 rounded-2xl bg-background/40 border border-border/30 hover:border-primary/20 hover:bg-background/80 transition-all">
+                  <div className="flex size-9 items-center justify-center rounded-xl bg-amber-500/10 text-amber-500 shrink-0">
+                    <Wrench className="size-4.5" />
+                  </div>
+                  <div className="space-y-1">
+                    <h4 className="text-xs font-bold text-foreground">3. Lifecycle Opportunity Matching</h4>
+                    <p className="text-[11px] text-muted-foreground leading-relaxed font-medium">
+                      Verify certificate dates against corporate database rules to compute precise service intervals and prompt upcoming recertifications.
+                    </p>
                   </div>
                 </div>
               </div>
             </div>
           </div>
-        )}
+        </div>
+      )}
 
 
       {/* Duplicate-confirmation popup — locked: admin MUST click one of the

@@ -33,7 +33,7 @@ const LayoutContext = createContext<LayoutContextType | undefined>(undefined);
 
 export function useLayout() {
   const ctx = useContext(LayoutContext);
-  if (!ctx) return { isUploading: false, setIsUploading: () => {} };
+  if (!ctx) return { isUploading: false, setIsUploading: () => { } };
   return ctx;
 }
 
@@ -165,7 +165,7 @@ function AppLayout() {
 
   useEffect(() => {
     if (!user) return;
-    
+
     const updateCoords = () => {
       const activeItem = navItems.find((item) => {
         if (item.to !== location.pathname) return false;
@@ -198,11 +198,11 @@ function AppLayout() {
 
   if (showSignOutLoading) {
     return (
-      <LoadingScreen 
-        title="WOM" 
-        subtitle="Lifecycle" 
-        statusText="Closing Secure Session" 
-        subStatusText="Terminating Connection..." 
+      <LoadingScreen
+        title="WOM"
+        subtitle="Lifecycle"
+        statusText="Closing Secure Session"
+        subStatusText="Terminating Connection..."
         onFinished={async () => {
           await signOut();
           setShowSignOutLoading(false);
@@ -215,11 +215,11 @@ function AppLayout() {
   if (loading) {
     if (!isAuthPage) {
       return (
-        <LoadingScreen 
-          title="WOM" 
-          subtitle="Lifecycle" 
-          statusText="Initializing Environment" 
-          subStatusText="Secure Handshake..." 
+        <LoadingScreen
+          title="WOM"
+          subtitle="Lifecycle"
+          statusText="Initializing Environment"
+          subStatusText="Secure Handshake..."
         />
       );
     }
@@ -229,95 +229,100 @@ function AppLayout() {
     return <Outlet />;
   }
 
+  if (isUploading) {
+    return (
+      <LayoutContext.Provider value={{ isUploading, setIsUploading }}>
+        <LoadingScreen
+          title="WOM"
+          subtitle="Lifecycle"
+          statusText="Processing Document"
+          subStatusText="Extracting Data with AI Engine..."
+        />
+      </LayoutContext.Provider>
+    );
+  }
+
   return (
     <LayoutContext.Provider value={{ isUploading, setIsUploading }}>
       <div className="min-h-screen bg-background text-foreground selection:bg-primary/20 flex flex-col relative">
-      {/* Fixed Background Layers */}
-      <div className="fixed inset-0 z-0 pointer-events-none">
-        <div className="absolute inset-0 bg-mesh" />
-        <div className="absolute inset-0 bg-grid opacity-30" />
-      </div>
+        {/* Fixed Background Layers */}
+        <div className="fixed inset-0 z-0 pointer-events-none">
+          <div className="absolute inset-0 bg-mesh" />
+          <div className="absolute inset-0 bg-grid opacity-30" />
+        </div>
 
-      <header className="sticky top-0 z-40 border-b border-border/50 bg-background/80 backdrop-blur-xl relative">
-        <div className="mx-auto flex h-20 max-w-[1600px] items-center gap-8 px-6">
-          <div className="flex items-center gap-5">
-            <div className="relative size-14 shrink-0 overflow-hidden rounded-full border-2 border-primary/20 bg-white shadow-xl shadow-primary/10 transition-all hover:scale-110 hover:shadow-primary/20">
-              <div className="absolute inset-0 bg-gradient-to-tr from-primary/5 to-transparent" />
-              <img
-                src="/logo.png"
-                alt="WOM Logo"
-                className="relative z-10 size-full object-contain p-1.5"
-              />
-            </div>
-            <div className="leading-tight">
-              <div className="font-display text-lg font-black tracking-tight text-accent">
-                WOM <span className="text-primary">Lifecycle</span>
-              </div>
-              <div className="font-mono text-[10px] font-bold uppercase tracking-[0.25em] text-muted-foreground/80">
-                Worldwide Oilfield Machine
-              </div>
-            </div>
-          </div>
-
-          {isUploading ? (
-            <div className="mx-auto flex items-center gap-2 px-4 py-2 rounded-full border border-primary/20 bg-primary/5 text-primary text-xs font-bold animate-pulse">
-              <span className="size-1.5 rounded-full bg-primary animate-ping" />
-              Document Processing in Progress...
-            </div>
-          ) : (
-            <nav
-              ref={containerRef}
-              className="relative mx-auto hidden items-center gap-1 rounded-full bg-secondary/80 p-1.5 backdrop-blur-sm md:flex"
-            >
-              {coords.width > 0 && (
-                <div
-                  className="absolute top-1.5 bottom-1.5 bg-primary rounded-full transition-all duration-300 ease-in-out shadow-md shadow-primary/25"
-                  style={{
-                    left: `${coords.left}px`,
-                    width: `${coords.width}px`,
-                  }}
+        <header className="sticky top-0 z-40 border-b border-border/50 bg-background/80 backdrop-blur-xl relative">
+          <div className="mx-auto flex h-20 max-w-[1600px] items-center gap-8 px-6">
+            <div className="flex items-center gap-5">
+              <div className="relative size-14 shrink-0 overflow-hidden rounded-full border-2 border-primary/20 bg-white shadow-xl shadow-primary/10 transition-all hover:scale-110 hover:shadow-primary/20">
+                <div className="absolute inset-0 bg-gradient-to-tr from-primary/5 to-transparent" />
+                <img
+                  src="/logo.png"
+                  alt="WOM Logo"
+                  className="relative z-10 size-full object-contain p-1.5"
                 />
-              )}
+              </div>
+              <div className="leading-tight">
+                <div className="font-display text-lg font-black tracking-tight text-accent">
+                  WOM <span className="text-primary">Lifecycle</span>
+                </div>
+                <div className="font-mono text-[10px] font-bold uppercase tracking-[0.25em] text-muted-foreground/80">
+                  Worldwide Oilfield Machine
+                </div>
+              </div>
+            </div>
 
-              {navItems.map((item) => {
-                const active =
-                  item.to === location.pathname &&
-                  (!item.search || item.search.tab === (search.tab || "Home"));
-
-                return (
-                  <Link
-                    key={item.id}
-                    to={item.to}
-                    search={item.search}
-                    onClick={(e) => {
-                      const el = e.currentTarget;
-                      if (containerRef.current) {
-                        const containerRect = containerRef.current.getBoundingClientRect();
-                        const elRect = el.getBoundingClientRect();
-                        setCoords({
-                          left: elRect.left - containerRect.left,
-                          width: elRect.width,
-                        });
-                      }
+            <nav
+                ref={containerRef}
+                className="relative mx-auto hidden items-center gap-1 rounded-full bg-secondary/80 p-1.5 backdrop-blur-sm md:flex"
+              >
+                {coords.width > 0 && (
+                  <div
+                    className="absolute top-1.5 bottom-1.5 bg-primary rounded-full transition-all duration-300 ease-in-out shadow-md shadow-primary/25"
+                    style={{
+                      left: `${coords.left}px`,
+                      width: `${coords.width}px`,
                     }}
-                    ref={(el) => {
-                      itemRefs.current[item.id] = el;
-                    }}
-                    className={cn(
-                      "relative z-10 rounded-full px-6 py-2 text-sm font-semibold transition-colors duration-300",
-                      active
-                        ? "text-white"
-                        : "text-muted-foreground hover:text-foreground"
-                    )}
-                  >
-                    {item.label}
-                  </Link>
-                );
-              })}
-            </nav>
-          )}
+                  />
+                )}
 
-          {!isUploading && (
+                {navItems.map((item) => {
+                  const active =
+                    item.to === location.pathname &&
+                    (!item.search || item.search.tab === (search.tab || "Home"));
+
+                  return (
+                    <Link
+                      key={item.id}
+                      to={item.to}
+                      search={item.search}
+                      onClick={(e) => {
+                        const el = e.currentTarget;
+                        if (containerRef.current) {
+                          const containerRect = containerRef.current.getBoundingClientRect();
+                          const elRect = el.getBoundingClientRect();
+                          setCoords({
+                            left: elRect.left - containerRect.left,
+                            width: elRect.width,
+                          });
+                        }
+                      }}
+                      ref={(el) => {
+                        itemRefs.current[item.id] = el;
+                      }}
+                      className={cn(
+                        "relative z-10 rounded-full px-6 py-2 text-sm font-semibold transition-colors duration-300",
+                        active
+                          ? "text-white"
+                          : "text-muted-foreground hover:text-foreground"
+                      )}
+                    >
+                      {item.label}
+                    </Link>
+                  );
+                })}
+              </nav>
+
             <div className="ml-auto flex items-center gap-6">
               <div className="hidden sm:flex items-center gap-2">
                 <NotificationBell />
@@ -327,15 +332,14 @@ function AppLayout() {
                 <UserMenu onSignOut={() => setShowSignOutLoading(true)} />
               </div>
             </div>
-          )}
-        </div>
-      </header>
+          </div>
+        </header>
 
-      <main className="flex-1 flex flex-col relative z-10">
-        <Outlet />
-      </main>
-    </div>
-  </LayoutContext.Provider>
+        <main className="flex-1 flex flex-col relative z-10">
+          <Outlet />
+        </main>
+      </div>
+    </LayoutContext.Provider>
   );
 }
 

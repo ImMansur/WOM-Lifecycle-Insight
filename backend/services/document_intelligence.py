@@ -71,6 +71,14 @@ async def extract_text(file_bytes: bytes, filename: str) -> tuple[str, bool]:
         )
     except Exception as exc:
         logger.warning("DI extraction failed for %s: %s", filename, exc)
+        exc_str = str(exc)
+        if "InvalidContentLength" in exc_str or "too large" in exc_str:
+            raise RuntimeError(
+                "The file size is too large for Azure Document Intelligence. "
+                "If your Azure resource is on the Free (F0) tier, the maximum file size is 4 MB. "
+                "Please upgrade your Azure resource to the Standard (S0) tier to support files up to 500 MB, "
+                "or compress your document to reduce its file size below 4 MB."
+            )
         # Re-raise API/credential errors so the caller can surface them.
         # Only swallow the error for a genuine "no text" response.
         raise RuntimeError(f"Document Intelligence extraction failed: {exc}") from exc
