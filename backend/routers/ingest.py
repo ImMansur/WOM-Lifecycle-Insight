@@ -25,6 +25,17 @@ router = APIRouter(prefix="/api", tags=["ingest"])
 
 upload_progress_store: dict[str, dict] = {}
 
+# PyMuPDF is not reliably thread-safe — serialize compression across concurrent batch tasks.
+_compression_lock: "asyncio.Lock | None" = None
+
+
+def _get_compression_lock():
+    global _compression_lock
+    if _compression_lock is None:
+        import asyncio
+        _compression_lock = asyncio.Lock()
+    return _compression_lock
+
 def update_upload_progress(upload_id: str | None, filename: str, progress: int, substatus: str):
     if not upload_id:
         return
@@ -59,12 +70,8 @@ def update_upload_progress(upload_id: str | None, filename: str, progress: int, 
         total = len(files)
         store["status"] = f"Processed {completed} of {total} documents"
         
-        # Substatus can show what's currently active
-        active_substatuses = [f"{Path(fn).name}: {f['substatus']}" for fn, f in files.items() if f["progress"] < 100]
-        if active_substatuses:
-            store["substatus"] = " | ".join(active_substatuses[:2])  # show up to 2 active files
-        else:
-            store["substatus"] = "Finalizing..."
+        active_substatuses = [f["substatus"] for f in files.values() if f["progress"] < 100]
+        store["substatus"] = active_substatuses[0] if active_substatuses else "Finalizing..."
 
 @router.get("/ingest/status/{upload_id}")
 async def get_ingest_status(upload_id: str):
@@ -311,7 +318,11 @@ async def _extract_and_compress_one_file(
     if ext == ".pdf":
         update_upload_progress(upload_id, filename, 15, "Compressing PDF document...")
         from services.pdf_compressor import compress_pdf_bytes
-        compressed_bytes, pages = compress_pdf_bytes(file_bytes, filename)
+        import asyncio
+        async with _get_compression_lock():
+            compressed_bytes, pages = await asyncio.to_thread(
+                compress_pdf_bytes, file_bytes, filename
+            )
         if len(compressed_bytes) < len(file_bytes):
             file_bytes = compressed_bytes
             compressed_size = len(file_bytes)

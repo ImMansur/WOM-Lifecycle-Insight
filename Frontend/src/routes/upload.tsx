@@ -4,8 +4,10 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ingestFiles,
   uploadFileInChunks,
+  fetchIngestStatus,
   confirmIngestUpdates,
   type IngestResponse,
+  type IngestProgress,
   type PendingDuplicate,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -16,7 +18,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { LoadingScreen } from "@/components/wom/LoadingScreen";
+import { LoadingScreen, type FileUploadProgress } from "@/components/wom/LoadingScreen";
 import { NotificationBell } from "@/components/wom/NotificationBell";
 import {
   Upload,
@@ -44,7 +46,6 @@ import {
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useAuth } from "@/lib/auth-context";
 import { useNotifications } from "@/lib/notifications-context";
-import { useLayout } from "./__root";
 
 export const Route = createFileRoute("/upload")({
   component: UploadPage,
@@ -52,18 +53,42 @@ export const Route = createFileRoute("/upload")({
 
 // UserMenu component moved to __root.tsx layout wrapper
 
+// Stay safely under Vercel's 4.5 MB function body limit for batch uploads
+const VERCEL_SAFE_BATCH_BYTES = 4 * 1024 * 1024;
+
+function startIngestStatusPolling(
+  uploadId: string,
+  onUpdate: (status: IngestProgress) => void,
+): () => void {
+  let stopped = false;
+  const poll = async () => {
+    while (!stopped) {
+      try {
+        const status = await fetchIngestStatus(uploadId);
+        onUpdate(status);
+      } catch {
+        // Ignore transient polling errors
+      }
+      await new Promise((r) => setTimeout(r, 500));
+    }
+  };
+  void poll();
+  return () => {
+    stopped = true;
+  };
+}
+
 function UploadPage() {
   const navigate = useNavigate();
   const { user, loading } = useAuth();
   const { addNotification } = useNotifications();
-  const {
-    setIsUploading,
-    setUploadProgress,
-    setUploadStatus,
-    setUploadSubStatus,
-  } = useLayout();
   const [dragOver, setDragOver] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
+  const [loadingVisible, setLoadingVisible] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadStatus, setUploadStatus] = useState("");
+  const [uploadSubStatus, setUploadSubStatus] = useState("");
+  const [uploadFileProgress, setUploadFileProgress] = useState<FileUploadProgress[]>([]);
 
   useEffect(() => {
     if (!loading) {
@@ -88,54 +113,96 @@ function UploadPage() {
       const isLocal =
         window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
 
+      const uploadId = crypto.randomUUID();
       const total = filesToUpload.length;
-      const combined: IngestResponse = {
-        processed: 0,
-        recommendations: [],
-        pendingDuplicates: [],
-        errors: [],
-      };
+      const totalSize = filesToUpload.reduce((acc, f) => acc + f.size, 0);
+      const useBatchUpload = isLocal || totalSize <= VERCEL_SAFE_BATCH_BYTES;
 
-      // Jump to 35% — compression/upload phase complete
-      setUploadProgress(35);
-      setUploadStatus("Processing Documents");
-      setUploadSubStatus("Extracting & analyzing with AI Engine...");
-
-      // Process files — LoadingScreen will slowly climb from 35% → 95% on its own
-      for (let i = 0; i < total; i++) {
-        const file = filesToUpload[i];
-        if (total > 1) {
-          setUploadSubStatus(`Analyzing document ${i + 1} of ${total}...`);
+      const stopPolling = startIngestStatusPolling(uploadId, (status) => {
+        setUploadProgress(status.progress);
+        if (status.status) {
+          setUploadStatus(status.status);
         }
-        try {
-          let result: IngestResponse;
-          if (!isLocal) {
-            result = await uploadFileInChunks(file);
-          } else {
-            result = await ingestFiles([file]);
+        if (status.substatus) {
+          setUploadSubStatus(status.substatus);
+        }
+        if (status.files) {
+          setUploadFileProgress(
+            Object.entries(status.files).map(([name, file]) => ({
+              name: name.split(/[/\\]/).pop() ?? name,
+              progress: file.progress,
+              substatus: file.substatus,
+            })),
+          );
+        }
+      });
+
+      try {
+        setUploadProgress(1);
+        setUploadStatus("Uploading Documents");
+        setUploadSubStatus(
+          total > 1
+            ? `Sending ${total} files to the server...`
+            : "Sending file to the server...",
+        );
+        setUploadFileProgress(
+          filesToUpload.map((f) => ({
+            name: f.name,
+            progress: 0,
+            substatus: "Queued...",
+          })),
+        );
+
+        if (useBatchUpload) {
+          return await ingestFiles(filesToUpload, uploadId);
+        }
+
+        const combined: IngestResponse = {
+          processed: 0,
+          recommendations: [],
+          pendingDuplicates: [],
+          errors: [],
+        };
+
+        for (let i = 0; i < total; i++) {
+          const file = filesToUpload[i];
+          setUploadStatus("Uploading Documents");
+          setUploadSubStatus(
+            total > 1
+              ? `Uploading file ${i + 1} of ${total}: ${file.name}`
+              : `Uploading ${file.name}...`,
+          );
+          setUploadProgress(Math.max(1, Math.floor((i / total) * 10)));
+
+          try {
+            const result = await uploadFileInChunks(file, uploadId);
+            combined.processed += result.processed;
+            combined.recommendations.push(...result.recommendations);
+            combined.pendingDuplicates.push(...result.pendingDuplicates);
+            combined.errors.push(...result.errors);
+          } catch (err: any) {
+            combined.errors.push(`${file.name}: processing failed — ${err.message || err}`);
           }
 
-          combined.processed += result.processed;
-          combined.recommendations.push(...result.recommendations);
-          combined.pendingDuplicates.push(...result.pendingDuplicates);
-          combined.errors.push(...result.errors);
-        } catch (err: any) {
-          combined.errors.push(`${file.name}: processing failed — ${err.message || err}`);
+          setUploadProgress(Math.floor(((i + 1) / total) * 100));
         }
-      }
 
-      return combined;
+        return combined;
+      } finally {
+        stopPolling();
+      }
     },
     onMutate: () => {
+      setLoadingVisible(true);
       setUploadProgress(0);
       setUploadStatus("Uploading Documents");
-      setUploadSubStatus("Compressing & preparing files...");
-      setIsUploading(true);
+      setUploadSubStatus("Preparing upload...");
+      setUploadFileProgress([]);
     },
     onSuccess: (data) => {
       // Snap to 100%
       setUploadProgress(100);
-      setUploadStatus("Processing Complete");
+      setUploadStatus("Complete");
       setUploadSubStatus("Redirecting to dashboard...");
 
       qc.invalidateQueries({ queryKey: ["recommendations"] });
@@ -162,15 +229,17 @@ function UploadPage() {
       if (data.pendingDuplicates && data.pendingDuplicates.length > 0) {
         setSavedCount(data.processed);
         setPendingDuplicates(data.pendingDuplicates);
-        setIsUploading(false);
+        setLoadingVisible(false);
         setUploadProgress(0);
+        setUploadFileProgress([]);
         return;
       }
 
       // Wait a moment at 100% so the user sees completion, then navigate
       setTimeout(() => {
-        setIsUploading(false);
+        setLoadingVisible(false);
         setUploadProgress(0);
+        setUploadFileProgress([]);
         navigate({ to: "/dashboard", search: { tab: "Home" } });
       }, 800);
     },
@@ -180,8 +249,9 @@ function UploadPage() {
         status: "error",
         message: `Upload failed · ${err.message}`,
       });
-      setIsUploading(false);
+      setLoadingVisible(false);
       setUploadProgress(0);
+      setUploadFileProgress([]);
     },
   });
 
@@ -256,6 +326,11 @@ function UploadPage() {
 
   const handleProcess = () => {
     if (files.length > 0) {
+      setLoadingVisible(true);
+      setUploadProgress(0);
+      setUploadStatus("Uploading Documents");
+      setUploadSubStatus("Preparing upload...");
+      setUploadFileProgress([]);
       mutation.mutate(files);
     }
   };
@@ -263,6 +338,17 @@ function UploadPage() {
 
 
   return (
+    <>
+      {loadingVisible && (
+        <LoadingScreen
+          title="WOM"
+          subtitle="Lifecycle"
+          statusText={uploadStatus || "Processing Documents"}
+          subStatusText={uploadSubStatus || "Starting pipeline..."}
+          progressValue={uploadProgress}
+          fileProgress={uploadFileProgress}
+        />
+      )}
     <div className="w-full flex-1 flex flex-col items-center justify-center p-8">
       {uploadResult ? (
         <div className="w-full max-w-3xl space-y-8 animate-in fade-in zoom-in-95 duration-500">
@@ -662,5 +748,6 @@ function UploadPage() {
         </DialogContent>
       </Dialog>
     </div>
+    </>
   );
 }

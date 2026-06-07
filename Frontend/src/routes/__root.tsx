@@ -6,7 +6,7 @@ import {
   useLocation,
   useNavigate,
 } from "@tanstack/react-router";
-import { useState, useRef, useEffect, useMemo, createContext, useContext } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { useAuth, AuthProvider } from "@/lib/auth-context";
 import { NotificationsProvider } from "@/lib/notifications-context";
 import { NotificationBell } from "@/components/wom/NotificationBell";
@@ -23,36 +23,6 @@ import {
 import { ChevronDown, LogOut, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 import "../styles.css";
-
-interface LayoutContextType {
-  isUploading: boolean;
-  setIsUploading: (val: boolean) => void;
-  uploadProgress: number;
-  setUploadProgress: (val: number) => void;
-  uploadStatus: string;
-  setUploadStatus: (val: string) => void;
-  uploadSubStatus: string;
-  setUploadSubStatus: (val: string) => void;
-}
-
-const LayoutContext = createContext<LayoutContextType | undefined>(undefined);
-
-export function useLayout() {
-  const ctx = useContext(LayoutContext);
-  if (!ctx) {
-    return {
-      isUploading: false,
-      setIsUploading: () => {},
-      uploadProgress: 0,
-      setUploadProgress: () => {},
-      uploadStatus: "",
-      setUploadStatus: () => {},
-      uploadSubStatus: "",
-      setUploadSubStatus: () => {},
-    };
-  }
-  return ctx;
-}
 
 function NotFoundComponent() {
   return (
@@ -159,10 +129,6 @@ function AppLayout() {
   const search = location.search as any;
   const navigate = useNavigate();
   const [showSignOutLoading, setShowSignOutLoading] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [uploadStatus, setUploadStatus] = useState("");
-  const [uploadSubStatus, setUploadSubStatus] = useState("");
 
   const navItems = useMemo(() => {
     if (!user) return [];
@@ -262,28 +228,7 @@ function AppLayout() {
   }
 
   return (
-    <LayoutContext.Provider
-      value={{
-        isUploading,
-        setIsUploading,
-        uploadProgress,
-        setUploadProgress,
-        uploadStatus,
-        setUploadStatus,
-        uploadSubStatus,
-        setUploadSubStatus,
-      }}
-    >
-      {isUploading && (
-        <LoadingScreen
-          title="WOM"
-          subtitle="Lifecycle"
-          statusText={uploadStatus || "Processing Document"}
-          subStatusText={uploadSubStatus || "Extracting Data with AI Engine..."}
-          progressValue={uploadProgress}
-        />
-      )}
-      <div className="min-h-screen bg-background text-foreground selection:bg-primary/20 flex flex-col relative">
+    <div className="min-h-screen bg-background text-foreground selection:bg-primary/20 flex flex-col relative">
         {/* Fixed Background Layers */}
         <div className="fixed inset-0 z-0 pointer-events-none">
           <div className="absolute inset-0 bg-mesh" />
@@ -376,7 +321,6 @@ function AppLayout() {
           <Outlet />
         </main>
       </div>
-    </LayoutContext.Provider>
   );
 }
 
