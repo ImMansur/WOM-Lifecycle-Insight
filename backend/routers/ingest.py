@@ -284,6 +284,7 @@ async def ingest_files(
 
     # 1. Read files and validate size sequentially to protect memory/limits
     total_batch_size = 0
+    total_batch_pages = 0
     valid_files: list[tuple[bytes, str, str]] = []
 
     for upload in files:
@@ -301,17 +302,20 @@ async def ingest_files(
             errors.append(f"{filename}: total upload size exceeded 10MB limit. Skipping.")
             continue
             
-        total_batch_size += original_size
-
         if len(file_bytes) == 0:
             errors.append(f"{filename}: empty file.")
             continue
 
-        page_err = _check_page_limit(file_bytes, filename, ext)
-        if page_err:
-            errors.append(page_err)
+        pages = count_document_pages(file_bytes, ext)
+        if total_batch_pages + pages > MAX_PAGES:
+            errors.append(
+                f"{filename}: adding this document would exceed the total limit of {MAX_PAGES} pages "
+                f"(document has {pages} pages, current total is {total_batch_pages}). Skipping."
+            )
             continue
 
+        total_batch_pages += pages
+        total_batch_size += original_size
         valid_files.append((file_bytes, filename, ext))
 
     # Initialize progress for all files in the batch
@@ -634,6 +638,7 @@ async def ingest_from_blob(
 
     # 1. Download and validate sizes sequentially
     total_batch_size = 0
+    total_batch_pages = 0
     valid_downloads: list[tuple[bytes, str, str]] = []
 
     for blob_name in blob_names:
@@ -656,11 +661,15 @@ async def ingest_from_blob(
             errors.append(f"{blob_name}: empty file.")
             continue
 
-        page_err = _check_page_limit(file_bytes, blob_name, ext)
-        if page_err:
-            errors.append(page_err)
+        pages = count_document_pages(file_bytes, ext)
+        if total_batch_pages + pages > MAX_PAGES:
+            errors.append(
+                f"{blob_name}: adding this document would exceed the total limit of {MAX_PAGES} pages "
+                f"(document has {pages} pages, current total is {total_batch_pages}). Skipping."
+            )
             continue
 
+        total_batch_pages += pages
         total_batch_size += original_size
         blob_url = f"https://blob/{blob_name}"
         valid_downloads.append((file_bytes, blob_name, blob_url))

@@ -58,7 +58,7 @@ export const Route = createFileRoute("/upload")({
 // Stay safely under Vercel's 4.5 MB function body limit for batch uploads
 const VERCEL_SAFE_BATCH_BYTES = 4 * 1024 * 1024;
 const MAX_TOTAL_SIZE = 10 * 1024 * 1024;
-const MAX_PAGES_PER_FILE = 50;
+const MAX_TOTAL_PAGES = 50;
 
 type BlockedFile = {
   name: string;
@@ -95,6 +95,7 @@ function UploadPage() {
   const { addNotification } = useNotifications();
   const [dragOver, setDragOver] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
+  const [filePages, setFilePages] = useState<Record<string, number>>({});
   const [loadingVisible, setLoadingVisible] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadStatus, setUploadStatus] = useState("");
@@ -263,6 +264,7 @@ function UploadPage() {
         setLoadingVisible(false);
         setUploadProgress(0);
         setUploadFileProgress([]);
+        setFilePages({});
         navigate({ to: "/dashboard", search: { tab: "Home" } });
       }, 800);
     },
@@ -323,31 +325,34 @@ function UploadPage() {
 
     setValidatingFiles(true);
     const blocked: BlockedFile[] = [];
-    const pageOk: File[] = [];
+    const pageCounts: { file: File; pages: number }[] = [];
 
     try {
       for (const f of newFiles) {
         try {
           const result = await validateDocument(f);
-          if (!result.allowed) {
-            blocked.push({ name: f.name, reason: "pages", pages: result.pages });
-          } else {
-            pageOk.push(f);
-          }
+          pageCounts.push({ file: f, pages: result.pages });
         } catch {
-          pageOk.push(f);
+          pageCounts.push({ file: f, pages: 1 });
         }
       }
 
+      const currentPages = Object.values(filePages).reduce((acc, p) => acc + p, 0);
+      let runningPages = currentPages;
       let currentSize = files.reduce((acc, f) => acc + f.size, 0);
       const added: File[] = [];
+      const newlyAddedPages: Record<string, number> = {};
 
-      for (const f of pageOk) {
-        if (currentSize + f.size > MAX_TOTAL_SIZE) {
-          blocked.push({ name: f.name, reason: "size", size: f.size });
+      for (const { file, pages } of pageCounts) {
+        if (runningPages + pages > MAX_TOTAL_PAGES) {
+          blocked.push({ name: file.name, reason: "pages", pages });
+        } else if (currentSize + file.size > MAX_TOTAL_SIZE) {
+          blocked.push({ name: file.name, reason: "size", size: file.size });
         } else {
-          added.push(f);
-          currentSize += f.size;
+          added.push(file);
+          newlyAddedPages[file.name] = pages;
+          runningPages += pages;
+          currentSize += file.size;
         }
       }
 
@@ -356,13 +361,21 @@ function UploadPage() {
       }
       if (added.length > 0) {
         setFiles((prev) => [...prev, ...added]);
+        setFilePages((prev) => ({ ...prev, ...newlyAddedPages }));
       }
     } finally {
       setValidatingFiles(false);
     }
   };
 
-  const removeFile = (name: string) => setFiles((prev) => prev.filter((f) => f.name !== name));
+  const removeFile = (name: string) => {
+    setFiles((prev) => prev.filter((f) => f.name !== name));
+    setFilePages((prev) => {
+      const next = { ...prev };
+      delete next[name];
+      return next;
+    });
+  };
 
   const handleProcess = () => {
     if (files.length > 0) {
@@ -522,7 +535,7 @@ function UploadPage() {
                   or click to browse from your computer
                 </p>
                 <p className="mt-3 text-[10px] text-muted-foreground/60 uppercase tracking-widest font-mono">
-                  PDF, DOC, DOCX · 10 MB total · {MAX_PAGES_PER_FILE} pages max per file
+                  PDF, DOC, DOCX · 10 MB total · {MAX_TOTAL_PAGES} pages total limit
                 </p>
               </div>
             </div>
@@ -540,7 +553,10 @@ function UploadPage() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => setFiles([])}
+                    onClick={() => {
+                      setFiles([]);
+                      setFilePages({});
+                    }}
                     className="h-8 text-xs font-semibold text-destructive hover:text-destructive hover:bg-destructive/10 rounded-xl px-3"
                   >
                     Clear all
@@ -562,6 +578,11 @@ function UploadPage() {
                         </span>
                       </div>
                       <div className="flex items-center gap-3 shrink-0">
+                        {filePages[f.name] !== undefined && (
+                          <span className="text-[10px] font-mono font-medium text-muted-foreground">
+                            {filePages[f.name]} page{filePages[f.name] !== 1 ? "s" : ""}
+                          </span>
+                        )}
                         <span className="text-[10px] font-mono font-medium text-muted-foreground">
                           {(f.size / 1024 / 1024).toFixed(1)} MB
                         </span>
@@ -769,17 +790,17 @@ function UploadPage() {
             <DialogTitle className="font-display text-lg text-foreground flex items-center gap-2">
               <AlertTriangle className="size-5 text-destructive animate-pulse" />
               {blockedFiles.every((f) => f.reason === "pages")
-                ? `Documents Exceeded ${MAX_PAGES_PER_FILE} Page Limit`
+                ? `Documents Exceeded ${MAX_TOTAL_PAGES} Page Limit`
                 : blockedFiles.every((f) => f.reason === "size")
                   ? "Files Exceeded 10MB Limit"
                   : "Some Files Could Not Be Added"}
             </DialogTitle>
             <DialogDescription className="text-muted-foreground text-sm">
               {blockedFiles.every((f) => f.reason === "pages")
-                ? `The following files exceed the maximum of ${MAX_PAGES_PER_FILE} pages per document:`
+                ? `The following files could not be added because they would exceed the total limit of ${MAX_TOTAL_PAGES} pages:`
                 : blockedFiles.every((f) => f.reason === "size")
                   ? "The following files could not be added because they would exceed the total upload limit of 10 MB:"
-                  : "The following files could not be added due to the 10 MB total size limit or the 50 page per-document limit:"}
+                  : `The following files could not be added due to the 10 MB total size limit or the ${MAX_TOTAL_PAGES} page total limit:`}
             </DialogDescription>
           </DialogHeader>
 
