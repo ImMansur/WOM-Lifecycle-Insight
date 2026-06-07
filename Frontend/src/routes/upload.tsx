@@ -74,6 +74,7 @@ function UploadPage() {
   // Duplicate-confirmation popup state
   const [pendingDuplicates, setPendingDuplicates] = useState<PendingDuplicate[]>([]);
   const [savedCount, setSavedCount] = useState(0);
+  const [blockedFiles, setBlockedFiles] = useState<{ name: string; size: number }[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const qc = useQueryClient();
 
@@ -213,18 +214,24 @@ function UploadPage() {
       const newFiles = filtered.filter((f) => !names.has(f.name));
       if (newFiles.length === 0) return prev;
 
-      const currentSize = prev.reduce((acc, f) => acc + f.size, 0);
-      const incomingSize = newFiles.reduce((acc, f) => acc + f.size, 0);
+      let currentSize = prev.reduce((acc, f) => acc + f.size, 0);
+      const added: File[] = [];
+      const blocked: { name: string; size: number }[] = [];
 
-      if (currentSize + incomingSize > MAX_TOTAL_SIZE) {
-        addNotification({
-          fileName: "Limit Exceeded",
-          status: "error",
-          message: `Total upload size cannot exceed 10MB. Selected files (${((currentSize + incomingSize) / 1024 / 1024).toFixed(1)} MB) would cross the limit.`,
-        });
-        return prev;
+      for (const f of newFiles) {
+        if (currentSize + f.size > MAX_TOTAL_SIZE) {
+          blocked.push({ name: f.name, size: f.size });
+        } else {
+          added.push(f);
+          currentSize += f.size;
+        }
       }
-      return [...prev, ...newFiles];
+
+      if (blocked.length > 0) {
+        setBlockedFiles(blocked);
+      }
+
+      return [...prev, ...added];
     });
   };
 
@@ -598,6 +605,43 @@ function UploadPage() {
                   Replace existing
                 </>
               )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Blocked Files Modal */}
+      <Dialog open={blockedFiles.length > 0} onOpenChange={(open) => !open && setBlockedFiles([])}>
+        <DialogContent className="sm:max-w-md bg-surface border-border">
+          <DialogHeader>
+            <DialogTitle className="font-display text-lg text-foreground flex items-center gap-2">
+              <AlertTriangle className="size-5 text-destructive animate-pulse" />
+              Files Exceeded 10MB Limit
+            </DialogTitle>
+            <DialogDescription className="text-muted-foreground text-sm">
+              The following files could not be added because they would exceed the total upload limit of 10 MB:
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="mt-2 max-h-[40vh] divide-y divide-border/30 overflow-y-auto rounded-lg border border-border/40">
+            {blockedFiles.map((f, idx) => (
+              <div key={idx} className="flex justify-between items-center p-3 text-xs bg-background/50 hover:bg-background/80 transition-colors">
+                <span className="font-mono text-foreground truncate max-w-[260px] font-semibold" title={f.name}>
+                  {f.name}
+                </span>
+                <span className="text-muted-foreground font-mono shrink-0">
+                  {(f.size / 1024 / 1024).toFixed(2)} MB
+                </span>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-4 flex justify-end">
+            <Button
+              onClick={() => setBlockedFiles([])}
+              className="bg-primary hover:bg-primary/90 text-white font-bold"
+            >
+              Acknowledge
             </Button>
           </div>
         </DialogContent>
