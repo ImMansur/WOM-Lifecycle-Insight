@@ -325,20 +325,7 @@ function LogsPage() {
               {filteredLogs.length} Entries
             </span>
           </h3>
-          <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
-            <div className="relative w-full sm:max-w-xs">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground/50" />
-              <input
-                type="text"
-                placeholder="Search by file name..."
-                value={searchTerm}
-                onChange={(e) => {
-                  setSearchTerm(e.target.value);
-                  setCurrentPage(1);
-                }}
-                className="w-full bg-background/50 border border-border/50 rounded-2xl pl-10 pr-4 py-2.5 text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all font-medium h-10"
-              />
-            </div>
+          <div className="flex items-center gap-3">
             <Button
               variant="outline"
               size="sm"
@@ -365,6 +352,19 @@ function LogsPage() {
                 Clear Log
               </Button>
             )}
+            <div className="relative w-48 sm:w-64">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground/50" />
+              <input
+                type="text"
+                placeholder="Search by file name..."
+                value={searchTerm}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="w-full bg-background/50 border border-border/50 rounded-2xl pl-10 pr-4 py-2.5 text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all font-medium h-10"
+              />
+            </div>
           </div>
         </div>
 
