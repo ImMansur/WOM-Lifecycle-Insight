@@ -25,14 +25,16 @@ function LoginPage() {
   const { signIn, user, loading } = useAuth();
 
   useEffect(() => {
-    if (!loading && user && barFinished) {
-      if (user.role === "Uploader") {
-        navigate({ to: "/upload" });
-      } else {
-        navigate({ to: "/dashboard" });
+    if (!loading && user) {
+      if (!isLoading || barFinished) {
+        if (user.role === "Uploader") {
+          navigate({ to: "/upload" });
+        } else {
+          navigate({ to: "/dashboard" });
+        }
       }
     }
-  }, [user, loading, barFinished, navigate]);
+  }, [user, loading, isLoading, barFinished, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

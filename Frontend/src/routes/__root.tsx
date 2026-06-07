@@ -4,11 +4,13 @@ import {
   Link,
   createRootRouteWithContext,
   useLocation,
+  useNavigate,
 } from "@tanstack/react-router";
 import { useState, useRef, useEffect, useMemo } from "react";
 import { useAuth, AuthProvider } from "@/lib/auth-context";
 import { NotificationsProvider } from "@/lib/notifications-context";
 import { NotificationBell } from "@/components/wom/NotificationBell";
+import { LoadingScreen } from "@/components/wom/LoadingScreen";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -71,8 +73,8 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   errorComponent: ErrorComponent,
 });
 
-function UserMenu() {
-  const { user, signOut } = useAuth();
+function UserMenu({ onSignOut }: { onSignOut: () => void }) {
+  const { user } = useAuth();
   if (!user) return null;
   const initials = (user.displayName ?? user.email ?? "A")
     .split(" ")
@@ -116,10 +118,7 @@ function UserMenu() {
         <DropdownMenuSeparator />
         <DropdownMenuItem
           className="gap-2 text-destructive focus:text-destructive cursor-pointer"
-          onClick={async () => {
-            await signOut();
-            window.location.href = "/login";
-          }}
+          onClick={onSignOut}
         >
           <LogOut className="size-4" /> Sign out
         </DropdownMenuItem>
@@ -129,14 +128,16 @@ function UserMenu() {
 }
 
 function AppLayout() {
-  const { user, loading } = useAuth();
+  const { user, loading, signOut } = useAuth();
   const location = useLocation();
   const search = location.search as any;
+  const navigate = useNavigate();
+  const [showSignOutLoading, setShowSignOutLoading] = useState(false);
 
   const navItems = useMemo(() => {
     if (!user) return [];
     return [
-      { id: "home", label: "Home", to: "/dashboard", search: { tab: "Home" } },
+      ...(user.role !== "Uploader" ? [{ id: "home", label: "Home", to: "/dashboard", search: { tab: "Home" } }] : []),
       ...(user.role !== "Analysis" ? [{ id: "upload", label: "Upload", to: "/upload" }] : []),
       ...(user.role !== "Uploader" ? [{ id: "action-center", label: "Action Center", to: "/action-center" }] : []),
       ...(user.role !== "Uploader" ? [{ id: "rules", label: "Lifecycle Rules", to: "/dashboard", search: { tab: "Lifecycle Rules" } }] : []),
@@ -181,8 +182,33 @@ function AppLayout() {
 
   const isAuthPage = location.pathname === "/login" || location.pathname === "/";
 
+  if (showSignOutLoading) {
+    return (
+      <LoadingScreen 
+        title="WOM" 
+        subtitle="Lifecycle" 
+        statusText="Closing Secure Session" 
+        subStatusText="Terminating Connection..." 
+        onFinished={async () => {
+          await signOut();
+          setShowSignOutLoading(false);
+          navigate({ to: "/login" });
+        }}
+      />
+    );
+  }
+
   if (loading) {
-    return null;
+    if (!isAuthPage) {
+      return (
+        <LoadingScreen 
+          title="WOM" 
+          subtitle="Lifecycle" 
+          statusText="Initializing Environment" 
+          subStatusText="Secure Handshake..." 
+        />
+      );
+    }
   }
 
   if (isAuthPage || !user) {
@@ -275,7 +301,7 @@ function AppLayout() {
             </div>
             <div className="h-8 w-px bg-border/50 hidden sm:block" />
             <div className="flex items-center gap-3">
-              <UserMenu />
+              <UserMenu onSignOut={() => setShowSignOutLoading(true)} />
             </div>
           </div>
         </div>
