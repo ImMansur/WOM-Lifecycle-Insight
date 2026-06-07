@@ -787,27 +787,19 @@ function Dashboard() {
               Home
             </button>
             {user?.role !== "Analysis" && (
-              <a
-                href="/upload"
-                onClick={(e) => {
-                  e.preventDefault();
-                  navigate({ to: "/upload" });
-                }}
+              <Link
+                to="/upload"
                 className="rounded-full px-6 py-2 text-sm transition-all font-semibold text-muted-foreground hover:text-foreground"
               >
                 Upload
-              </a>
+              </Link>
             )}
-            <a
-              href="/action-center"
-              onClick={(e) => {
-                e.preventDefault();
-                navigate({ to: "/action-center" });
-              }}
+            <Link
+              to="/action-center"
               className="rounded-full px-6 py-2 text-sm transition-all font-semibold text-muted-foreground hover:text-foreground"
             >
               Action Center
-            </a>
+            </Link>
             <button
               onClick={() => setActiveTab("Lifecycle Rules")}
               className={`rounded-full px-6 py-2 text-sm transition-all font-semibold ${
