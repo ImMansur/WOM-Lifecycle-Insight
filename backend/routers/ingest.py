@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import base64
 import logging
+import os
 from pathlib import Path
 from typing import List
 
@@ -18,6 +19,7 @@ from models import (
 from services.document_intelligence import extract_text, extract_text_from_docx
 from services.openai_service import process_document
 from services.blob_storage import upload_file, generate_upload_sas, download_blob, stage_block, commit_blocks
+from services.page_counter import count_document_pages
 from store import recommendation_store, upload_progress_store_fs
 
 logger = logging.getLogger(__name__)
@@ -131,6 +133,30 @@ async def register_upload_progress(payload: InitProgressRequest):
     return {"registered": len(payload.filenames)}
 
 
+@router.post("/validate-document", status_code=status.HTTP_200_OK)
+async def validate_document(file: UploadFile = File(...)):
+    """Check page count before upload — used by the frontend to block oversized documents early."""
+    filename = file.filename or "unknown"
+    ext = Path(filename).suffix.lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(status_code=400, detail=f"Unsupported file type '{ext}'.")
+
+    file_bytes = await file.read()
+    if len(file_bytes) == 0:
+        raise HTTPException(status_code=400, detail="Empty file.")
+
+    pages = count_document_pages(file_bytes, ext)
+    allowed = pages <= MAX_PAGES
+    message = None if allowed else _page_limit_error(filename, pages).replace(" Skipping.", "")
+    return {
+        "filename": filename,
+        "pages": pages,
+        "maxPages": MAX_PAGES,
+        "allowed": allowed,
+        "message": message,
+    }
+
+
 def log_optimization_event(filename: str, original_size: int, compressed_size: int, bypass_di: bool, pages: int) -> None:
     from datetime import datetime, timezone
     import uuid
@@ -180,6 +206,18 @@ def log_optimization_event(filename: str, original_size: int, compressed_size: i
 ALLOWED_EXTENSIONS = {".pdf", ".doc", ".docx"}
 MAX_FILE_SIZE_MB = 10
 MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
+MAX_PAGES = int(os.environ.get("MAX_PAGES", os.environ.get("DI_MAX_PAGES", "50")))
+
+
+def _page_limit_error(filename: str, pages: int) -> str:
+    return f"{filename}: document has {pages} pages (maximum allowed is {MAX_PAGES}). Skipping."
+
+
+def _check_page_limit(file_bytes: bytes, filename: str, ext: str) -> str | None:
+    pages = count_document_pages(file_bytes, ext)
+    if pages > MAX_PAGES:
+        return _page_limit_error(filename, pages)
+    return None
 
 
 def _get_combination_keys(rec: Recommendation) -> set[tuple[str, str, str, str, str]]:
@@ -267,6 +305,11 @@ async def ingest_files(
 
         if len(file_bytes) == 0:
             errors.append(f"{filename}: empty file.")
+            continue
+
+        page_err = _check_page_limit(file_bytes, filename, ext)
+        if page_err:
+            errors.append(page_err)
             continue
 
         valid_files.append((file_bytes, filename, ext))
@@ -524,6 +567,10 @@ async def ingest_chunk(
     if file_bytes is None:
         raise HTTPException(status_code=503, detail="Could not download assembled file from blob storage.")
 
+    page_err = _check_page_limit(file_bytes, filename, ext)
+    if page_err:
+        return IngestResponse(processed=0, recommendations=[], pendingDuplicates=[], errors=[page_err])
+
     all_existing = recommendation_store.all()
     existing_by_combo: dict = {}
     for r in all_existing:
@@ -605,8 +652,17 @@ async def ingest_from_blob(
             errors.append(f"{blob_name}: total upload size exceeded 10MB limit. Skipping.")
             continue
             
+        if len(file_bytes) == 0:
+            errors.append(f"{blob_name}: empty file.")
+            continue
+
+        page_err = _check_page_limit(file_bytes, blob_name, ext)
+        if page_err:
+            errors.append(page_err)
+            continue
+
         total_batch_size += original_size
-        blob_url = f"https://blob/{blob_name}"  # approximate real URL
+        blob_url = f"https://blob/{blob_name}"
         valid_downloads.append((file_bytes, blob_name, blob_url))
 
     # Initialize progress for all files in the batch

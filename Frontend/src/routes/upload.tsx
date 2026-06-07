@@ -6,6 +6,7 @@ import {
   uploadFileInChunks,
   fetchIngestStatus,
   initUploadProgress,
+  validateDocument,
   confirmIngestUpdates,
   type IngestResponse,
   type IngestProgress,
@@ -56,6 +57,15 @@ export const Route = createFileRoute("/upload")({
 
 // Stay safely under Vercel's 4.5 MB function body limit for batch uploads
 const VERCEL_SAFE_BATCH_BYTES = 4 * 1024 * 1024;
+const MAX_TOTAL_SIZE = 10 * 1024 * 1024;
+const MAX_PAGES_PER_FILE = 50;
+
+type BlockedFile = {
+  name: string;
+  reason: "size" | "pages";
+  size?: number;
+  pages?: number;
+};
 
 function startIngestStatusPolling(
   uploadId: string,
@@ -105,7 +115,8 @@ function UploadPage() {
   // Duplicate-confirmation popup state
   const [pendingDuplicates, setPendingDuplicates] = useState<PendingDuplicate[]>([]);
   const [savedCount, setSavedCount] = useState(0);
-  const [blockedFiles, setBlockedFiles] = useState<{ name: string; size: number }[]>([]);
+  const [blockedFiles, setBlockedFiles] = useState<BlockedFile[]>([]);
+  const [validatingFiles, setValidatingFiles] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const qc = useQueryClient();
 
@@ -304,22 +315,36 @@ function UploadPage() {
 
 
 
-  const addFiles = (incoming: FileList | File[]) => {
+  const addFiles = async (incoming: FileList | File[]) => {
     const filtered = Array.from(incoming).filter((f) => /\.(pdf|doc|docx)$/i.test(f.name));
-    const MAX_TOTAL_SIZE = 10 * 1024 * 1024; // 10MB
+    const names = new Set(files.map((f) => f.name));
+    const newFiles = filtered.filter((f) => !names.has(f.name));
+    if (newFiles.length === 0) return;
 
-    setFiles((prev) => {
-      const names = new Set(prev.map((f) => f.name));
-      const newFiles = filtered.filter((f) => !names.has(f.name));
-      if (newFiles.length === 0) return prev;
+    setValidatingFiles(true);
+    const blocked: BlockedFile[] = [];
+    const pageOk: File[] = [];
 
-      let currentSize = prev.reduce((acc, f) => acc + f.size, 0);
-      const added: File[] = [];
-      const blocked: { name: string; size: number }[] = [];
-
+    try {
       for (const f of newFiles) {
+        try {
+          const result = await validateDocument(f);
+          if (!result.allowed) {
+            blocked.push({ name: f.name, reason: "pages", pages: result.pages });
+          } else {
+            pageOk.push(f);
+          }
+        } catch {
+          pageOk.push(f);
+        }
+      }
+
+      let currentSize = files.reduce((acc, f) => acc + f.size, 0);
+      const added: File[] = [];
+
+      for (const f of pageOk) {
         if (currentSize + f.size > MAX_TOTAL_SIZE) {
-          blocked.push({ name: f.name, size: f.size });
+          blocked.push({ name: f.name, reason: "size", size: f.size });
         } else {
           added.push(f);
           currentSize += f.size;
@@ -329,9 +354,12 @@ function UploadPage() {
       if (blocked.length > 0) {
         setBlockedFiles(blocked);
       }
-
-      return [...prev, ...added];
-    });
+      if (added.length > 0) {
+        setFiles((prev) => [...prev, ...added]);
+      }
+    } finally {
+      setValidatingFiles(false);
+    }
   };
 
   const removeFile = (name: string) => setFiles((prev) => prev.filter((f) => f.name !== name));
@@ -458,11 +486,13 @@ function UploadPage() {
                 onDrop={(e) => {
                   e.preventDefault();
                   setDragOver(false);
-                  addFiles(e.dataTransfer.files);
+                  void addFiles(e.dataTransfer.files);
                 }}
-                onClick={() => inputRef.current?.click()}
+                onClick={() => !validatingFiles && inputRef.current?.click()}
                 className={`cursor-pointer rounded-2xl border-2 border-dashed p-10 text-center transition-all ${
-                  dragOver
+                  validatingFiles
+                    ? "pointer-events-none opacity-70 border-border/60"
+                    : dragOver
                     ? "border-primary bg-primary/5 scale-[1.01]"
                     : "border-border/60 bg-background/30 hover:border-primary/50 hover:bg-primary/5 hover:scale-[1.005]"
                 }`}
@@ -473,17 +503,26 @@ function UploadPage() {
                   accept=".pdf,.doc,.docx"
                   className="hidden"
                   ref={inputRef}
-                  onChange={(e) => e.target.files && addFiles(e.target.files)}
+                  onChange={(e) => {
+                    if (e.target.files) void addFiles(e.target.files);
+                    e.target.value = "";
+                  }}
                 />
                 <div className="mx-auto mb-5 flex size-16 items-center justify-center rounded-2xl bg-secondary shadow-md transition-transform duration-300 hover:scale-105">
-                  <Upload className="size-6 text-primary animate-bounce" />
+                  {validatingFiles ? (
+                    <Loader2 className="size-6 text-primary animate-spin" />
+                  ) : (
+                    <Upload className="size-6 text-primary animate-bounce" />
+                  )}
                 </div>
-                <p className="text-base font-bold text-foreground">Drag & drop files here</p>
+                <p className="text-base font-bold text-foreground">
+                  {validatingFiles ? "Checking documents..." : "Drag & drop files here"}
+                </p>
                 <p className="mt-1.5 text-xs text-muted-foreground font-medium">
                   or click to browse from your computer
                 </p>
                 <p className="mt-3 text-[10px] text-muted-foreground/60 uppercase tracking-widest font-mono">
-                  PDF, DOC, DOCX up to 10MB TOTAL
+                  PDF, DOC, DOCX · 10 MB total · {MAX_PAGES_PER_FILE} pages max per file
                 </p>
               </div>
             </div>
@@ -729,21 +768,37 @@ function UploadPage() {
           <DialogHeader>
             <DialogTitle className="font-display text-lg text-foreground flex items-center gap-2">
               <AlertTriangle className="size-5 text-destructive animate-pulse" />
-              Files Exceeded 10MB Limit
+              {blockedFiles.every((f) => f.reason === "pages")
+                ? `Documents Exceeded ${MAX_PAGES_PER_FILE} Page Limit`
+                : blockedFiles.every((f) => f.reason === "size")
+                  ? "Files Exceeded 10MB Limit"
+                  : "Some Files Could Not Be Added"}
             </DialogTitle>
             <DialogDescription className="text-muted-foreground text-sm">
-              The following files could not be added because they would exceed the total upload limit of 10 MB:
+              {blockedFiles.every((f) => f.reason === "pages")
+                ? `The following files exceed the maximum of ${MAX_PAGES_PER_FILE} pages per document:`
+                : blockedFiles.every((f) => f.reason === "size")
+                  ? "The following files could not be added because they would exceed the total upload limit of 10 MB:"
+                  : "The following files could not be added due to the 10 MB total size limit or the 50 page per-document limit:"}
             </DialogDescription>
           </DialogHeader>
 
           <div className="mt-2 max-h-[40vh] divide-y divide-border/30 overflow-y-auto rounded-lg border border-border/40">
             {blockedFiles.map((f, idx) => (
-              <div key={idx} className="flex justify-between items-center p-3 text-xs bg-background/50 hover:bg-background/80 transition-colors">
-                <span className="font-mono text-foreground truncate max-w-[260px] font-semibold" title={f.name}>
+              <div
+                key={idx}
+                className="flex justify-between items-center gap-3 p-3 text-xs bg-background/50 hover:bg-background/80 transition-colors"
+              >
+                <span
+                  className="font-mono text-foreground truncate max-w-[260px] font-semibold"
+                  title={f.name}
+                >
                   {f.name}
                 </span>
                 <span className="text-muted-foreground font-mono shrink-0">
-                  {(f.size / 1024 / 1024).toFixed(2)} MB
+                  {f.reason === "pages"
+                    ? `${f.pages} pages`
+                    : `${((f.size ?? 0) / 1024 / 1024).toFixed(2)} MB`}
                 </span>
               </div>
             ))}

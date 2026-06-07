@@ -70,6 +70,28 @@ export async function initUploadProgress(
   }
 }
 
+export interface ValidateDocumentResponse {
+  filename: string;
+  pages: number;
+  maxPages: number;
+  allowed: boolean;
+  message: string | null;
+}
+
+export async function validateDocument(file: File): Promise<ValidateDocumentResponse> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`${BASE}/api/validate-document`, {
+    method: "POST",
+    body: form,
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Validation failed (${res.status}): ${text}`);
+  }
+  return res.json();
+}
+
 export async function ingestFiles(files: File[], uploadId?: string): Promise<IngestResponse> {
   const form = new FormData();
   for (const file of files) {
