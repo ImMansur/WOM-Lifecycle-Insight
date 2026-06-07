@@ -28,6 +28,45 @@ MAX_FILE_SIZE_MB = 200
 MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
 
 
+def _get_combination_keys(rec: Recommendation) -> set[tuple[str, str, str, str, str]]:
+    cust = (rec.customer or "").strip().lower()
+    so = (rec.salesOrder or "").strip().lower()
+    cert = (rec.certificateDate or "").strip()
+    if not cust or not so or not cert:
+        return set()
+
+    keys = set()
+    # 1. Use lineItems if they exist
+    if rec.lineItems:
+        for item in rec.lineItems:
+            pn = (item.partNumber or "").strip().lower()
+            if item.serials:
+                for ser in item.serials:
+                    s = ser.strip().lower()
+                    if pn or s:
+                        keys.add((cust, so, cert, pn, s))
+            else:
+                if pn:
+                    keys.add((cust, so, cert, pn, ""))
+
+    # 2. Fall back to flat arrays if no keys were generated from lineItems
+    if not keys:
+        parts = [p.number.strip().lower() for p in rec.partNumbers if p.number]
+        serials = [s.strip().lower() for s in rec.serials if s]
+        if parts and serials:
+            for p in parts:
+                for s in serials:
+                    keys.add((cust, so, cert, p, s))
+        elif parts:
+            for p in parts:
+                keys.add((cust, so, cert, p, ""))
+        elif serials:
+            for s in serials:
+                keys.add((cust, so, cert, "", s))
+
+    return keys
+
+
 @router.post("/ingest", response_model=IngestResponse, status_code=status.HTTP_200_OK)
 async def ingest_files(files: List[UploadFile] = File(...)):
     """
@@ -42,22 +81,11 @@ async def ingest_files(files: List[UploadFile] = File(...)):
     errors: list[str] = []
     pending: list[PendingDuplicate] = []
 
-    # Snapshot existing records once; used for business-key dedupe.
-    # Key = (normalised customer, normalised salesOrder, certificateDate).
-    def _business_key(rec: Recommendation) -> tuple[str, str, str] | None:
-        cust = (rec.customer or "").strip().lower()
-        so = (rec.salesOrder or "").strip().lower()
-        cert = (rec.certificateDate or "").strip()
-        if not cust or not so or not cert:
-            return None
-        return (cust, so, cert)
-
     all_existing = recommendation_store.all()
-    existing_by_key: dict[tuple[str, str, str], Recommendation] = {}
+    existing_by_combo: dict[tuple[str, str, str, str, str], Recommendation] = {}
     for r in all_existing:
-        k = _business_key(r)
-        if k and k not in existing_by_key:
-            existing_by_key[k] = r
+        for combo in _get_combination_keys(r):
+            existing_by_combo[combo] = r
 
     for upload in files:
         filename = upload.filename or "unknown"
@@ -112,13 +140,16 @@ async def ingest_files(files: List[UploadFile] = File(...)):
             # Duplicate detection — two cases trigger an admin confirmation popup:
             #   1. Same record ID already exists (re-upload of the *exact same*
             #      file — content hash matched a previous upload).
-            #   2. Different ID but the business key (customer + sales order +
-            #      certificate date) collides with an existing record (admin
-            #      uploaded a corrected/revised CoC for the same job).
-            key = _business_key(recommendation)
+            #   2. Different ID but any 5-field business combination key (customer +
+            #      sales order + certificate date + item + serial) collides with an
+            #      existing record.
             existing = recommendation_store.get(recommendation.id)
-            if existing is None and key:
-                existing = existing_by_key.get(key)
+            new_combos = _get_combination_keys(recommendation)
+            if existing is None and new_combos:
+                for combo in new_combos:
+                    if combo in existing_by_combo:
+                        existing = existing_by_combo[combo]
+                        break
 
             if existing is not None:
                 pending.append(PendingDuplicate(
@@ -134,13 +165,13 @@ async def ingest_files(files: List[UploadFile] = File(...)):
                     "(same %s)",
                     recommendation.id,
                     existing.id,
-                    "file" if existing.id == recommendation.id else "business key",
+                    "file" if existing.id == recommendation.id else "business key combinations",
                 )
                 continue
 
-            # Not a duplicate — save now and record the key for in-batch dedupe.
-            if key:
-                existing_by_key[key] = recommendation
+            # Not a duplicate — save now and record the combination keys for in-batch dedupe.
+            for combo in new_combos:
+                existing_by_combo[combo] = recommendation
             results.append(recommendation)
             recommendation_store.add(recommendation)
 
@@ -164,7 +195,7 @@ async def _process_one_file(
     file_bytes: bytes,
     filename: str,
     blob_url: str | None,
-    existing_by_key: dict,
+    existing_by_combo: dict,
 ) -> tuple[Recommendation | None, PendingDuplicate | None, str | None]:
     """
     Run the full extraction→AI→dedup pipeline for a single file.
@@ -199,18 +230,13 @@ async def _process_one_file(
         recommendation.convertedDocx = converted_docx_name
         recommendation.blobUrl = blob_url
 
-        def _bk(rec: Recommendation):
-            cust = (rec.customer or "").strip().lower()
-            so = (rec.salesOrder or "").strip().lower()
-            cert = (rec.certificateDate or "").strip()
-            if not cust or not so or not cert:
-                return None
-            return (cust, so, cert)
-
-        key = _bk(recommendation)
         existing = recommendation_store.get(recommendation.id)
-        if existing is None and key:
-            existing = existing_by_key.get(key)
+        new_combos = _get_combination_keys(recommendation)
+        if existing is None and new_combos:
+            for combo in new_combos:
+                if combo in existing_by_combo:
+                    existing = existing_by_combo[combo]
+                    break
 
         if existing is not None:
             return None, PendingDuplicate(
@@ -222,8 +248,8 @@ async def _process_one_file(
                 newRecommendation=recommendation,
             ), None
 
-        if key:
-            existing_by_key[key] = recommendation
+        for combo in new_combos:
+            existing_by_combo[combo] = recommendation
         recommendation_store.add(recommendation)
         return recommendation, None, None
 
@@ -283,17 +309,12 @@ async def ingest_chunk(
         raise HTTPException(status_code=503, detail="Could not download assembled file from blob storage.")
 
     all_existing = recommendation_store.all()
-    existing_by_key: dict = {}
+    existing_by_combo: dict = {}
     for r in all_existing:
-        cust = (r.customer or "").strip().lower()
-        so = (r.salesOrder or "").strip().lower()
-        cert = (r.certificateDate or "").strip()
-        if cust and so and cert:
-            k = (cust, so, cert)
-            if k not in existing_by_key:
-                existing_by_key[k] = r
+        for combo in _get_combination_keys(r):
+            existing_by_combo[combo] = r
 
-    rec, dup, err = await _process_one_file(file_bytes, filename, blob_url, existing_by_key)
+    rec, dup, err = await _process_one_file(file_bytes, filename, blob_url, existing_by_combo)
 
     return IngestResponse(
         processed=1 if rec else 0,
@@ -340,15 +361,10 @@ async def ingest_from_blob(blob_names: list[str]):
     pending: list[PendingDuplicate] = []
 
     all_existing = recommendation_store.all()
-    existing_by_key: dict = {}
+    existing_by_combo: dict = {}
     for r in all_existing:
-        cust = (r.customer or "").strip().lower()
-        so = (r.salesOrder or "").strip().lower()
-        cert = (r.certificateDate or "").strip()
-        if cust and so and cert:
-            k = (cust, so, cert)
-            if k not in existing_by_key:
-                existing_by_key[k] = r
+        for combo in _get_combination_keys(r):
+            existing_by_combo[combo] = r
 
     for blob_name in blob_names:
         ext = Path(blob_name).suffix.lower()
@@ -363,7 +379,7 @@ async def ingest_from_blob(blob_names: list[str]):
 
         blob_url = f"https://blob/{blob_name}"  # approximate; real URL already stored during SAS upload
 
-        rec, dup, err = await _process_one_file(file_bytes, blob_name, blob_url, existing_by_key)
+        rec, dup, err = await _process_one_file(file_bytes, blob_name, blob_url, existing_by_combo)
         if err:
             errors.append(err)
         elif dup:

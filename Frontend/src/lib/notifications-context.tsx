@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from "react";
+import { useAuth } from "./auth-context";
 
 export interface Notification {
   id: string;
@@ -17,23 +18,38 @@ interface NotificationsContextType {
   clearAll: () => void;
 }
 
-const STORAGE_KEY = "wom_notifications";
-
 const NotificationsContext = createContext<NotificationsContextType | undefined>(undefined);
 
 export function NotificationsProvider({ children }: { children: React.ReactNode }) {
-  const [notifications, setNotifications] = useState<Notification[]>(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      return stored ? (JSON.parse(stored) as Notification[]) : [];
-    } catch {
-      return [];
-    }
-  });
+  const { user } = useAuth();
+  const [notifications, setNotifications] = useState<Notification[]>([]);
 
+  const getStorageKey = useCallback(() => {
+    return user ? `wom_notifications_${user.uid}` : null;
+  }, [user]);
+
+  // Load notifications when user changes
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(notifications));
-  }, [notifications]);
+    const key = getStorageKey();
+    if (key) {
+      try {
+        const stored = localStorage.getItem(key);
+        setNotifications(stored ? (JSON.parse(stored) as Notification[]) : []);
+      } catch {
+        setNotifications([]);
+      }
+    } else {
+      setNotifications([]);
+    }
+  }, [user, getStorageKey]);
+
+  // Save notifications when they change
+  useEffect(() => {
+    const key = getStorageKey();
+    if (key) {
+      localStorage.setItem(key, JSON.stringify(notifications));
+    }
+  }, [notifications, getStorageKey]);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 

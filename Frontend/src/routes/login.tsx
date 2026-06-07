@@ -14,48 +14,38 @@ export const Route = createFileRoute("/login")({
 });
 
 function LoginPage() {
-  const [mode, setMode] = useState<"signin" | "register">("signin");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [barFinished, setBarFinished] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [displayName, setDisplayName] = useState("");
-  const [jobTitle, setJobTitle] = useState("");
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { signIn, signUp, user, loading } = useAuth();
+  const { signIn, user, loading } = useAuth();
 
   useEffect(() => {
-    if (!loading && user && barFinished) navigate({ to: "/dashboard" });
+    if (!loading && user && barFinished) {
+      if (user.role === "Uploader") {
+        navigate({ to: "/upload" });
+      } else {
+        navigate({ to: "/dashboard" });
+      }
+    }
   }, [user, loading, barFinished, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
-    if (mode === "register") {
-      if (!displayName.trim()) return setError("Full name is required.");
-      if (!jobTitle.trim()) return setError("Job title is required.");
-      if (password.length < 8) return setError("Password must be at least 8 characters.");
-      if (password !== confirmPassword) return setError("Passwords do not match.");
-    }
-
     setIsSubmitting(true);
     try {
-      if (mode === "signin") {
-        await signIn(email, password);
-      } else {
-        await signUp(email, password, displayName.trim(), jobTitle.trim());
-      }
+      await signIn(email, password);
       // Credentials confirmed — now switch to full-screen loading.
       // Kick off data prefetch in parallel so it's cached when the dashboard mounts.
       queryClient.prefetchQuery({ queryKey: ["recommendations"], queryFn: fetchRecommendations });
       queryClient.prefetchQuery({ queryKey: ["actions"], queryFn: fetchActions });
       setIsLoading(true);
-      if (mode === "register") navigate({ to: "/dashboard" });
     } catch (err: unknown) {
       setIsSubmitting(false); // re-enable button so the user can retry
       const code = (err as { code?: string }).code ?? "";
@@ -77,10 +67,6 @@ function LoginPage() {
     }
   };
 
-  const switchMode = () => {
-    setError(null);
-    setMode(mode === "signin" ? "register" : "signin");
-  };
 
   if (isLoading) return <LoadingScreen onFinished={() => setBarFinished(true)} />;
 
@@ -158,12 +144,10 @@ function LoginPage() {
 
           <div className="mb-10">
             <h2 className="text-4xl font-black tracking-tight text-accent mb-3">
-              {mode === "signin" ? "Gateway Access" : "Create Account"}
+              Gateway Access
             </h2>
             <p className="text-muted-foreground font-medium text-lg">
-              {mode === "signin"
-                ? "Enter your credentials to manage lifecycle assets."
-                : "Register to access the lifecycle management platform."}
+              Enter your credentials to manage lifecycle assets.
             </p>
           </div>
 
@@ -172,46 +156,6 @@ function LoginPage() {
               <div className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm font-medium text-destructive">
                 {error}
               </div>
-            )}
-
-            {mode === "register" && (
-              <>
-                <div className="space-y-3">
-                  <Label htmlFor="displayName" className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/80">
-                    Full Name
-                  </Label>
-                  <div className="relative group">
-                    <User className="absolute left-4 top-1/2 -translate-y-1/2 size-5 text-muted-foreground/40 group-focus-within:text-primary transition-colors" />
-                    <Input
-                      id="displayName"
-                      type="text"
-                      placeholder="e.g. WOM Administrator"
-                      required
-                      className="pl-12 h-14 bg-white border-border/50 focus:border-primary/50 focus:ring-primary/20 transition-all text-base rounded-2xl shadow-sm"
-                      value={displayName}
-                      onChange={(e) => setDisplayName(e.target.value)}
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <Label htmlFor="jobTitle" className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/80">
-                    Job Title
-                  </Label>
-                  <div className="relative group">
-                    <Briefcase className="absolute left-4 top-1/2 -translate-y-1/2 size-5 text-muted-foreground/40 group-focus-within:text-primary transition-colors" />
-                    <Input
-                      id="jobTitle"
-                      type="text"
-                      placeholder="e.g. Fleet Manager"
-                      required
-                      className="pl-12 h-14 bg-white border-border/50 focus:border-primary/50 focus:ring-primary/20 transition-all text-base rounded-2xl shadow-sm"
-                      value={jobTitle}
-                      onChange={(e) => setJobTitle(e.target.value)}
-                    />
-                  </div>
-                </div>
-              </>
             )}
 
             <div className="space-y-3">
@@ -250,26 +194,6 @@ function LoginPage() {
               </div>
             </div>
 
-            {mode === "register" && (
-              <div className="space-y-3">
-                <Label htmlFor="confirmPassword" className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/80">
-                  Confirm Password
-                </Label>
-                <div className="relative group">
-                  <Lock className="absolute left-4 top-1/2 -translate-y-1/2 size-5 text-muted-foreground/40 group-focus-within:text-primary transition-colors" />
-                  <Input
-                    id="confirmPassword"
-                    type="password"
-                    placeholder="••••••••••••"
-                    required
-                    className="pl-12 h-14 bg-white border-border/50 focus:border-primary/50 focus:ring-primary/20 transition-all text-base rounded-2xl shadow-sm"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                  />
-                </div>
-              </div>
-            )}
-
             <div className="pt-2">
               <Button
                 type="submit"
@@ -280,7 +204,7 @@ function LoginPage() {
                   {isSubmitting ? (
                     <><Loader2 className="mr-2 size-5 animate-spin" /> Verifying...</>
                   ) : (
-                    <>{mode === "signin" ? "Establish Connection" : "Create Account"}<ChevronRight className="ml-2 size-6 transition-transform group-hover:translate-x-1" /></>
+                    <>Establish Connection<ChevronRight className="ml-2 size-6 transition-transform group-hover:translate-x-1" /></>
                   )}
                 </span>
                 <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:animate-shimmer" />

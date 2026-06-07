@@ -1186,6 +1186,19 @@ type TabKey = "tickets" | "actions";
 type ActionStatusFilter = "all" | ActionStatus;
 
 function ActionCenter() {
+  const { user, loading } = useAuth();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!loading) {
+      if (!user) {
+        navigate({ to: "/login" });
+      } else if (user.role === "Uploader") {
+        navigate({ to: "/upload" });
+      }
+    }
+  }, [user, loading, navigate]);
+
   const [selectedRec, setSelectedRec] = useState<Recommendation | null>(null);
   const [ticketOpen, setTicketOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -1286,10 +1299,21 @@ function ActionCenter() {
             </div>
           </div>
           <nav className="mx-auto hidden items-center gap-1 rounded-full bg-secondary/80 p-1.5 backdrop-blur-sm md:flex">
-            <Link to="/dashboard" className="rounded-full px-6 py-2 text-sm font-semibold transition-all text-muted-foreground hover:text-foreground">Home</Link>
-            <Link to="/upload" className="rounded-full px-6 py-2 text-sm font-semibold transition-all text-muted-foreground hover:text-foreground">Upload</Link>
-            <Link to="/action-center" className="rounded-full px-6 py-2 text-sm font-semibold transition-all bg-primary text-white shadow-md shadow-primary/20">Action Center</Link>
-            <Link to="/dashboard" search={{ tab: "Lifecycle Rules" }} className="rounded-full px-6 py-2 text-sm font-semibold transition-all text-muted-foreground hover:text-foreground">Lifecycle Rules</Link>
+            {user?.role !== "Uploader" && (
+              <Link to="/dashboard" className="rounded-full px-6 py-2 text-sm font-semibold transition-all text-muted-foreground hover:text-foreground">Home</Link>
+            )}
+            {user?.role !== "Analysis" && (
+              <Link to="/upload" className="rounded-full px-6 py-2 text-sm font-semibold transition-all text-muted-foreground hover:text-foreground">Upload</Link>
+            )}
+            {user?.role !== "Uploader" && (
+              <Link to="/action-center" className="rounded-full px-6 py-2 text-sm font-semibold transition-all bg-primary text-white shadow-md shadow-primary/20">Action Center</Link>
+            )}
+            {user?.role !== "Uploader" && (
+              <Link to="/dashboard" search={{ tab: "Lifecycle Rules" }} className="rounded-full px-6 py-2 text-sm font-semibold transition-all text-muted-foreground hover:text-foreground">Lifecycle Rules</Link>
+            )}
+            {(user?.role === "Fleet Manager" || user?.role === "System Administrator") && (
+              <Link to="/users" className="rounded-full px-6 py-2 text-sm font-semibold transition-all text-muted-foreground hover:text-foreground">Users</Link>
+            )}
           </nav>
           <div className="ml-auto flex items-center gap-6">
             <div className="hidden sm:flex items-center gap-2">

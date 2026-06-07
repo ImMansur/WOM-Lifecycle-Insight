@@ -376,6 +376,7 @@ export function MultiSelectDropdown({
     if (!triggerEl) return;
     const initialY = triggerEl.getBoundingClientRect().top;
     function handleScroll() {
+      if (!triggerEl) return;
       const currentY = triggerEl.getBoundingClientRect().top;
       if (Math.abs(currentY - initialY) > 2) {
         setOpen(false);
@@ -1064,6 +1065,18 @@ export function HomeTab({
     }
     return Object.entries(counts).map(([name, value]) => ({ name, value }));
   }, [filtered]);
+
+  // ── Confidence chart data ──────────────────────────────────────────────────
+  const confidenceData = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const r of filtered) {
+      counts[r.confidence] = (counts[r.confidence] ?? 0) + 1;
+    }
+    return Object.entries(counts)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value);
+  }, [filtered]);
+
 
   // ── Recertification timeline bar chart ────────────────────────────────────
   const timelineData = useMemo(() => {

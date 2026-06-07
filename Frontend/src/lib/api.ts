@@ -348,3 +348,51 @@ export async function exportToExcel(recIds: string[]): Promise<void> {
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+
+// ─── User Management ──────────────────────────────────────────────────────────
+
+export interface UserProfile {
+  uid: string;
+  email: string | null;
+  displayName: string | null;
+  role: string;
+}
+
+export async function fetchUsers(): Promise<UserProfile[]> {
+  const res = await fetch(`${BASE}/api/users`);
+  if (!res.ok) throw new Error(`Failed to fetch users: ${res.statusText}`);
+  return res.json();
+}
+
+export async function createUser(body: {
+  email: string;
+  password?: string;
+  displayName: string;
+  role: string;
+}): Promise<UserProfile> {
+  const res = await fetch(`${BASE}/api/users`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Failed to create user (${res.status}): ${text}`);
+  }
+  return res.json();
+}
+
+export async function deleteUser(uid: string): Promise<void> {
+  const res = await fetch(`${BASE}/api/users/${encodeURIComponent(uid)}`, {
+    method: "DELETE",
+  });
+  if (!res.ok && res.status !== 204) {
+    throw new Error(`Failed to delete user: ${res.statusText}`);
+  }
+}
+
+export async function fetchUserRole(uid: string): Promise<{ role: string }> {
+  const res = await fetch(`${BASE}/api/users/role/${encodeURIComponent(uid)}`);
+  if (!res.ok) throw new Error(`Failed to fetch user role: ${res.statusText}`);
+  return res.json();
+}

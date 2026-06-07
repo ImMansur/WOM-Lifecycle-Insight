@@ -352,7 +352,16 @@ function AiSuggestionsInline({ actionId }: { actionId: string | undefined }) {
     setError(null);
     try {
       const result = await suggestNextSteps(actionId);
-      setSteps(result);
+      const suggestions = result.comments.filter((c) => c.type === "ai_suggestion");
+      const latest = suggestions[suggestions.length - 1];
+      let newSteps: string[] = [];
+      if (latest) {
+        try {
+          const data = JSON.parse(latest.text);
+          newSteps = Array.isArray(data.steps) ? data.steps : [];
+        } catch { /* ignore */ }
+      }
+      setSteps(newSteps);
     } catch (e) {
       setError((e as Error).message);
     } finally {

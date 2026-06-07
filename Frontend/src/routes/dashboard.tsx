@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { Recommendation } from "@/lib/wom-data";
@@ -562,8 +562,12 @@ function Dashboard() {
   });
 
   useEffect(() => {
-    if (!loading && !user) {
-      navigate({ to: "/login" });
+    if (!loading) {
+      if (!user) {
+        navigate({ to: "/login" });
+      } else if (user.role === "Uploader") {
+        navigate({ to: "/upload" });
+      }
     }
   }, [user, loading, navigate]);
 
@@ -782,16 +786,18 @@ function Dashboard() {
             >
               Home
             </button>
-            <a
-              href="/upload"
-              onClick={(e) => {
-                e.preventDefault();
-                navigate({ to: "/upload" });
-              }}
-              className="rounded-full px-6 py-2 text-sm transition-all font-semibold text-muted-foreground hover:text-foreground"
-            >
-              Upload
-            </a>
+            {user?.role !== "Analysis" && (
+              <a
+                href="/upload"
+                onClick={(e) => {
+                  e.preventDefault();
+                  navigate({ to: "/upload" });
+                }}
+                className="rounded-full px-6 py-2 text-sm transition-all font-semibold text-muted-foreground hover:text-foreground"
+              >
+                Upload
+              </a>
+            )}
             <a
               href="/action-center"
               onClick={(e) => {
@@ -812,6 +818,14 @@ function Dashboard() {
             >
               Lifecycle Rules
             </button>
+            {(user?.role === "Fleet Manager" || user?.role === "System Administrator") && (
+              <Link
+                to="/users"
+                className="rounded-full px-6 py-2 text-sm font-semibold transition-all text-muted-foreground hover:text-foreground"
+              >
+                Users
+              </Link>
+            )}
           </nav>
 
             <div className="ml-auto flex items-center gap-6">
@@ -828,34 +842,40 @@ function Dashboard() {
 
         {activeTab === "Home" && (<>
 
-          {/* ── Hero ───────────────────────────────────────────────────── */}
-          <section className="relative flex flex-col justify-center min-h-[calc(100vh-320px)] py-12">
-            <div className="relative mx-auto w-full max-w-[1600px] px-8">
-              <div className="flex flex-col items-start gap-8">
-                {/* Badge */}
-                <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-4 py-2 text-[11px] font-bold uppercase tracking-[0.1em] text-primary">
-                  <span className="size-2 rounded-full bg-primary" />
-                  Intelligent Document
+          {/* ── Redesigned Compact Header Area ─────────────────────────── */}
+          <section className="relative py-8 md:py-12 bg-gradient-to-b from-primary/5 to-transparent border-b border-border/30">
+            <div className="mx-auto w-full max-w-[1600px] px-8">
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-8">
+                <div className="space-y-3 flex-1">
+                  <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-3.5 py-1.5 text-[10px] font-bold uppercase tracking-[0.1em] text-primary">
+                    <span className="size-1.5 rounded-full bg-primary" />
+                    Lifecycle Intelligence Engine
+                  </div>
+                  <h1 className="font-display text-4xl font-black tracking-tight text-[#0D1117] sm:text-5xl">
+                    Proactive Lifecycle <span className="text-primary italic font-semibold">Recommendations</span>
+                  </h1>
+                  <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground/80 font-medium">
+                    Certificates of conformance parsed, structured, and matched against lifecycle rules. Discover service opportunities, generate quotes, or queue customer outreach.
+                  </p>
                 </div>
-                {/* Title */}
-                <h1 className="max-w-5xl font-display text-7xl font-bold leading-[1.05] tracking-tight text-[#0D1117] md:text-8xl">
-                  Proactive lifecycle{" "}
-                  <br />
-                  <span className="text-primary italic font-semibold">
-                    recommendations
-                  </span>
-                </h1>
-                {/* Sub */}
-                <p className="max-w-2xl text-lg leading-relaxed text-muted-foreground/80 font-medium">
-                  Certificates of conformance parsed, structured, and matched against lifecycle rules —
-                  convert each opportunity into a quote, recertification job, or customer email.
-                </p>
+                
+                {/* System Status Panel */}
+                <div className="bg-surface/60 backdrop-blur-md border border-border/40 p-5 rounded-2xl md:min-w-[320px] flex items-center gap-4 hover:shadow-lg transition-all hover:bg-surface/85 group">
+                  <div className="flex size-12 items-center justify-center rounded-xl bg-primary/10 text-primary transition-transform group-hover:scale-105 shrink-0">
+                    <Zap className="size-6 animate-pulse" />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="text-xs font-semibold text-muted-foreground/60 uppercase tracking-widest">System Status</div>
+                    <div className="text-sm font-bold text-foreground">Active & Operating</div>
+                    <div className="text-[10px] text-muted-foreground/80 font-mono">Synced As Of: {summary.asOf || "Today"}</div>
+                  </div>
+                </div>
               </div>
             </div>
           </section>
 
           {/* ── Sticky filter bar ──────────────────────────────────────── */}
-          <div className="mx-auto w-full max-w-[1600px] px-8 relative z-20">
+          <div className="mx-auto w-full max-w-[1600px] px-8 pt-8 relative z-20">
             <FilterBar
               timeFilter={recTimeFilter}
               setTimeFilter={setRecTimeFilter}
@@ -876,7 +896,7 @@ function Dashboard() {
           </div>
 
           {/* ── Content Section (Solid White) ────────────────────────── */}
-          <div className="relative mt-[-3rem] bg-white pb-24 shadow-[0_-40px_80px_rgba(0,0,0,0.02)] pt-32">
+          <div className="relative bg-white pb-24 shadow-[0_-40px_80px_rgba(0,0,0,0.02)] pt-10">
             {/* KPI cards */}
             <div className="mx-auto w-full max-w-[1600px] px-8">
               <div className="flex items-center gap-6">
@@ -1031,10 +1051,12 @@ function Dashboard() {
                         Upload PDF, DOC, or DOCX certificates of conformance to get started.
                       </p>
                     </div>
-                    <Button size="sm" onClick={() => navigate({ to: "/upload" })} className="mt-1 bg-accent text-accent-foreground font-bold hover:bg-accent/90">
-                      <Upload className="mr-2 size-4" />
-                      Upload documents
-                    </Button>
+                    {user?.role !== "Analysis" && (
+                      <Button size="sm" onClick={() => navigate({ to: "/upload" })} className="mt-1 bg-accent text-accent-foreground font-bold hover:bg-accent/90">
+                        <Upload className="mr-2 size-4" />
+                        Upload documents
+                      </Button>
+                    )}
                   </div>
                 )}
 

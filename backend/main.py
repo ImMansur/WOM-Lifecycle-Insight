@@ -81,7 +81,7 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
 )
 
-from routers import ingest, recommendations, actions, export  # noqa: E402
+from routers import ingest, recommendations, actions, export, users  # noqa: E402
 
 
 @asynccontextmanager
@@ -115,6 +115,7 @@ app.include_router(recommendations.router)
 app.include_router(ingest.router)
 app.include_router(actions.router)
 app.include_router(export.router)
+app.include_router(users.router)
 
 
 # Changed from "/" to "/api/info" so it doesn't block your React website

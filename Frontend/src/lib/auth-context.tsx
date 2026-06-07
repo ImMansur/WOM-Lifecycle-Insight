@@ -8,6 +8,7 @@ import {
 } from "firebase/auth";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { auth, db } from "./firebase";
+import { fetchUserRole } from "./api";
 
 interface User {
   uid: string;
@@ -39,20 +40,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       clearTimeout(timeout);
       setLoading(true);
       if (firebaseUser) {
-        // Fetch role from Firestore
-        let role = "Fleet Manager";
+        // Fetch role from Firestore via Backend API
+        let role = "Uploader";
         try {
-          const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
-          if (userDoc.exists()) {
-            role = userDoc.data().role || "Fleet Manager";
-          } else {
-            // Create profile if missing
-            await setDoc(doc(db, "users", firebaseUser.uid), {
-              role: "Fleet Manager",
-              email: firebaseUser.email,
-              displayName: firebaseUser.displayName || "WOM Administrator"
-            });
-          }
+          const res = await fetchUserRole(firebaseUser.uid);
+          role = res.role || "Uploader";
         } catch (e) {
           console.error("Error fetching user profile from Firestore:", e);
         }
@@ -60,7 +52,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser({
           uid: firebaseUser.uid,
           email: firebaseUser.email,
-          displayName: firebaseUser.displayName || "WOM Administrator",
+          displayName: firebaseUser.displayName || "WOM User",
           photoURL: firebaseUser.photoURL,
           role: role,
         });
@@ -82,22 +74,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     
     // Update the profile with the display name
     await updateProfile(firebaseUser, { 
-      displayName: displayName || "WOM Administrator" 
+      displayName: displayName || "WOM User" 
     });
     
     // Store profile in Firestore
     await setDoc(doc(db, "users", firebaseUser.uid), {
-      role: role || "Fleet Manager",
+      role: role || "Uploader",
       email: firebaseUser.email,
-      displayName: displayName || "WOM Administrator"
+      displayName: displayName || "WOM User"
     });
     
     setUser({
       uid: firebaseUser.uid,
       email: firebaseUser.email,
-      displayName: displayName || "WOM Administrator",
+      displayName: displayName || "WOM User",
       photoURL: firebaseUser.photoURL,
-      role: role || "Fleet Manager",
+      role: role || "Uploader",
     });
   };
 
