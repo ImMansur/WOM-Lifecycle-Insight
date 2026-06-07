@@ -284,52 +284,7 @@ function fmtDateShort(iso: string) {
 }
 
 // â”€â”€â”€ User menu â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-function UserMenu() {
-  const { user, signOut } = useAuth();
-  const navigate = useNavigate();
-  if (!user) return null;
-  const initials = (user.displayName ?? user.email ?? "A")
-    .split(" ")
-    .map((p) => p[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 2);
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button className="group flex items-center gap-3 px-3 py-2 rounded-2xl cursor-pointer border border-transparent hover:border-border/40 hover:bg-secondary/60 hover:shadow-sm transition-all focus:outline-none">
-          <Avatar className="size-9 border border-border bg-primary/10 transition-transform group-hover:scale-105">
-            <AvatarFallback className="bg-primary/10 text-primary text-xs font-bold">
-              {initials}
-            </AvatarFallback>
-          </Avatar>
-          <div className="hidden sm:flex flex-col text-left leading-tight">
-            <div className="text-sm font-bold text-foreground group-hover:text-primary transition-colors">{user.displayName ?? "Admin"}</div>
-            <div className="text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-widest">{(user as any).role ?? "Fleet Manager"}</div>
-          </div>
-          <ChevronDown className="hidden sm:block size-3.5 text-muted-foreground/40 group-hover:text-muted-foreground transition-all group-hover:translate-y-0.5" />
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-56 bg-surface border-border">
-        <DropdownMenuLabel>
-          <div className="font-semibold text-foreground truncate">{user.displayName ?? "Admin"}</div>
-          <div className="text-xs text-muted-foreground font-normal truncate">{user.email}</div>
-        </DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem className="gap-2 text-muted-foreground cursor-pointer">
-          <User className="size-4" /> Profile
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem
-          className="gap-2 text-destructive cursor-pointer"
-          onClick={async () => { await signOut(); navigate({ to: "/login" }); }}
-        >
-          <LogOut className="size-4" /> Sign out
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
+// UserMenu component moved to __root.tsx layout wrapper
 
 // â”€â”€â”€ Create Action Dialog â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function CreateActionDialog({
@@ -1284,48 +1239,7 @@ function ActionCenter() {
   );
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      {/* Header */}
-      <header className="sticky top-0 z-40 border-b border-border/50 bg-background/80 backdrop-blur-xl">
-        <div className="mx-auto flex h-20 max-w-[1600px] items-center gap-8 px-6">
-          <div className="flex items-center gap-5">
-            <div className="relative size-14 shrink-0 overflow-hidden rounded-full border-2 border-primary/20 bg-white shadow-xl shadow-primary/10 transition-all hover:scale-110 hover:shadow-primary/20">
-              <div className="absolute inset-0 bg-gradient-to-tr from-primary/5 to-transparent" />
-              <img src="/logo.png" alt="WOM Logo" className="relative z-10 size-full object-contain p-1.5" />
-            </div>
-            <div className="leading-tight">
-              <div className="font-display text-lg font-black tracking-tight text-accent">WOM <span className="text-primary">Lifecycle</span></div>
-              <div className="font-mono text-[10px] font-bold uppercase tracking-[0.25em] text-muted-foreground/80">Worldwide Oilfield Machine</div>
-            </div>
-          </div>
-          <nav className="mx-auto hidden items-center gap-1 rounded-full bg-secondary/80 p-1.5 backdrop-blur-sm md:flex">
-            {user?.role !== "Uploader" && (
-              <Link to="/dashboard" className="rounded-full px-6 py-2 text-sm font-semibold transition-all text-muted-foreground hover:text-foreground">Home</Link>
-            )}
-            {user?.role !== "Analysis" && (
-              <Link to="/upload" className="rounded-full px-6 py-2 text-sm font-semibold transition-all text-muted-foreground hover:text-foreground">Upload</Link>
-            )}
-            {user?.role !== "Uploader" && (
-              <Link to="/action-center" className="rounded-full px-6 py-2 text-sm font-semibold transition-all bg-primary text-white shadow-md shadow-primary/20">Action Center</Link>
-            )}
-            {user?.role !== "Uploader" && (
-              <Link to="/dashboard" search={{ tab: "Lifecycle Rules" }} className="rounded-full px-6 py-2 text-sm font-semibold transition-all text-muted-foreground hover:text-foreground">Lifecycle Rules</Link>
-            )}
-            {(user?.role === "Fleet Manager" || user?.role === "System Administrator") && (
-              <Link to="/users" className="rounded-full px-6 py-2 text-sm font-semibold transition-all text-muted-foreground hover:text-foreground">Users</Link>
-            )}
-          </nav>
-          <div className="ml-auto flex items-center gap-6">
-            <div className="hidden sm:flex items-center gap-2">
-              <NotificationBell />
-            </div>
-            <div className="h-8 w-px bg-border/50 hidden sm:block" />
-            <div className="flex items-center gap-3">
-              <UserMenu />
-            </div>
-          </div>
-        </div>
-      </header>
+    <div className="w-full">
 
       {/* Hero */}
       <section className="relative overflow-hidden py-14">

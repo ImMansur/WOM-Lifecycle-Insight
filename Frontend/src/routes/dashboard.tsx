@@ -435,61 +435,7 @@ function UploadDialog({
   );
 }
 
-function UserMenu() {
-  const navigate = useNavigate();
-  const { user, signOut } = useAuth();
-
-  const handleLogout = async () => {
-    await signOut();
-    navigate({ to: "/login" });
-  };
-
-  if (!user) return null;
-
-  const initials = (user.displayName || "WOM Administrator")
-    .split(" ")
-    .map((n) => n[0])
-    .join("")
-    .toUpperCase();
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button className="group flex items-center gap-3 px-3 py-2 rounded-2xl cursor-pointer border border-transparent hover:border-border/40 hover:bg-secondary/60 hover:shadow-sm transition-all focus:outline-none">
-          <Avatar className="size-9 border border-border bg-primary/10 transition-transform group-hover:scale-105">
-            <AvatarFallback className="bg-primary/10 text-primary text-xs font-bold">
-              {initials}
-            </AvatarFallback>
-          </Avatar>
-          <div className="hidden sm:flex flex-col text-left leading-tight">
-            <div className="text-sm font-bold text-foreground group-hover:text-primary transition-colors">{user.displayName || "Admin"}</div>
-            <div className="text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-widest">{user.role || "Fleet Manager"}</div>
-          </div>
-          <ChevronDown className="hidden sm:block size-3.5 text-muted-foreground/40 group-hover:text-muted-foreground transition-all group-hover:translate-y-0.5" />
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-56 bg-surface border-border">
-        <DropdownMenuLabel>
-          <div className="font-semibold text-foreground truncate">{user.displayName || "Admin"}</div>
-          <div className="text-xs text-muted-foreground font-normal truncate">{user.email}</div>
-        </DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem className="cursor-pointer">
-          <User className="mr-2 h-4 w-4" />
-          <span>Profile Details</span>
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem
-          className="text-destructive focus:text-destructive cursor-pointer"
-          onClick={handleLogout}
-        >
-          <LogOut className="mr-2 h-4 w-4" />
-          <span>Secure Logout</span>
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
+// UserMenu component moved to __root.tsx layout wrapper
 
 // ─── Confidence score ────────────────────────────────────────────────────────
 
@@ -747,92 +693,8 @@ function Dashboard() {
   if (!user && !loading) return null;
 
   return (
-    <div className="relative min-h-screen text-foreground selection:bg-primary/20">
-      {/* Fixed Background Layers */}
-      <div className="fixed inset-0 z-0 pointer-events-none">
-        <div className="absolute inset-0 bg-mesh" />
-        <div className="absolute inset-0 bg-grid" />
-      </div>
-
-      <div className="relative z-10 flex flex-col min-h-screen">
-        {/* Top bar */}
-        <header className="sticky top-0 z-40 border-b border-border/50 bg-background/80 backdrop-blur-xl">
-          <div className="mx-auto flex h-20 max-w-[1600px] items-center gap-8 px-6">
-            <div className="flex items-center gap-5">
-              <div className="relative size-14 shrink-0 overflow-hidden rounded-full border-2 border-primary/20 bg-white shadow-xl shadow-primary/10 transition-all hover:scale-110 hover:shadow-primary/20">
-                <div className="absolute inset-0 bg-gradient-to-tr from-primary/5 to-transparent" />
-                <img
-                  src="/logo.png"
-                  alt="WOM Logo"
-                  className="relative z-10 size-full object-contain p-1.5"
-                />
-              </div>
-              <div className="leading-tight">
-                <div className="font-display text-lg font-black tracking-tight text-accent">WOM <span className="text-primary">Lifecycle</span></div>
-                <div className="font-mono text-[10px] font-bold uppercase tracking-[0.25em] text-muted-foreground/80">
-                  Worldwide Oilfield Machine
-                </div>
-              </div>
-            </div>
-
-          <nav className="mx-auto hidden items-center gap-1 rounded-full bg-secondary/80 p-1.5 backdrop-blur-sm md:flex">
-            <button
-              onClick={() => setActiveTab("Home")}
-              className={`rounded-full px-6 py-2 text-sm transition-all font-semibold ${
-                activeTab === "Home"
-                  ? "bg-primary text-white shadow-md shadow-primary/20"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              Home
-            </button>
-            {user?.role !== "Analysis" && (
-              <Link
-                to="/upload"
-                className="rounded-full px-6 py-2 text-sm transition-all font-semibold text-muted-foreground hover:text-foreground"
-              >
-                Upload
-              </Link>
-            )}
-            <Link
-              to="/action-center"
-              className="rounded-full px-6 py-2 text-sm transition-all font-semibold text-muted-foreground hover:text-foreground"
-            >
-              Action Center
-            </Link>
-            <button
-              onClick={() => setActiveTab("Lifecycle Rules")}
-              className={`rounded-full px-6 py-2 text-sm transition-all font-semibold ${
-                activeTab === "Lifecycle Rules"
-                  ? "bg-primary text-white shadow-md shadow-primary/20"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              Lifecycle Rules
-            </button>
-            {(user?.role === "Fleet Manager" || user?.role === "System Administrator") && (
-              <Link
-                to="/users"
-                className="rounded-full px-6 py-2 text-sm font-semibold transition-all text-muted-foreground hover:text-foreground"
-              >
-                Users
-              </Link>
-            )}
-          </nav>
-
-            <div className="ml-auto flex items-center gap-6">
-              <div className="hidden sm:flex items-center gap-2">
-                <NotificationBell />
-              </div>
-              <div className="h-8 w-px bg-border/50 hidden sm:block" />
-              <div className="flex items-center gap-3">
-                <UserMenu />
-              </div>
-            </div>
-          </div>
-        </header>
-
-        {activeTab === "Home" && (<>
+    <div className="w-full">
+      {activeTab === "Home" && (<>
 
           {/* ── Redesigned Compact Header Area ─────────────────────────── */}
           <section className="relative py-8 md:py-12 bg-gradient-to-b from-primary/5 to-transparent border-b border-border/30">
@@ -1438,7 +1300,6 @@ function Dashboard() {
           </div>
         </>)}
         {activeTab === "Lifecycle Rules" && <LifecycleRulesTab />}
-      </div>
 
       <RecommendationDetail rec={selected} open={open} onOpenChange={setOpen} linkedAction={selected ? getLinkedAction(selected.id) : null} />
 
