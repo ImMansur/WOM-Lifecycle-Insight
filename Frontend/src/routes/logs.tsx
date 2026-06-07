@@ -136,6 +136,12 @@ function LogsPage() {
     return (summary.totalSavedSize / summary.totalOriginalSize) * 100;
   }, [summary]);
 
+  const isAdmin = useMemo(() => {
+    if (!user?.role) return false;
+    const r = user.role.toLowerCase();
+    return r.includes("admin") || r === "fleet manager";
+  }, [user?.role]);
+
   if (loading || !user || user.role === "Uploader") {
     return null;
   }
@@ -164,7 +170,7 @@ function LogsPage() {
             <RefreshCw className={`size-4 ${isFetching ? "animate-spin" : ""}`} />
             Refresh
           </Button>
-          {(user.role === "System Administrator" || user.role === "Fleet Manager") && (
+          {isAdmin && (
             <Button
               variant="ghost"
               size="sm"
@@ -363,10 +369,10 @@ function LogsPage() {
         </div>
 
         {/* Detailed Table */}
-        <div className="overflow-x-auto">
+        <div className="max-h-[500px] overflow-y-auto overflow-x-auto relative border-t border-border/20">
           <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="border-b border-border/40 bg-secondary/20 text-[10px] uppercase tracking-wider font-bold text-muted-foreground/75 font-mono">
+            <thead className="sticky top-0 bg-[#ffffff] dark:bg-[#0D1117] z-10 shadow-[0_1px_0_0_rgba(0,0,0,0.05)]">
+              <tr className="border-b border-border/40 bg-secondary/35 text-[10px] uppercase tracking-wider font-bold text-muted-foreground/75 font-mono">
                 <th className="py-4 px-6">File Name</th>
                 <th className="py-4 px-4">Original Size</th>
                 <th className="py-4 px-4">Optimized Size</th>
