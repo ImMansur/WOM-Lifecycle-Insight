@@ -5,6 +5,7 @@ import {
   ingestFiles,
   uploadFileInChunks,
   fetchIngestStatus,
+  initUploadProgress,
   confirmIngestUpdates,
   type IngestResponse,
   type IngestProgress,
@@ -118,8 +119,14 @@ function UploadPage() {
       const totalSize = filesToUpload.reduce((acc, f) => acc + f.size, 0);
       const useBatchUpload = isLocal || totalSize <= VERCEL_SAFE_BATCH_BYTES;
 
+      const applyProgress = (next: number) => {
+        setUploadProgress((prev) => Math.max(prev, Math.min(100, next)));
+      };
+
       const stopPolling = startIngestStatusPolling(uploadId, (status) => {
-        setUploadProgress(status.progress);
+        if (status.progress > 0) {
+          applyProgress(status.progress);
+        }
         if (status.status) {
           setUploadStatus(status.status);
         }
@@ -153,6 +160,15 @@ function UploadPage() {
           })),
         );
 
+        try {
+          await initUploadProgress(
+            uploadId,
+            filesToUpload.map((f) => f.name),
+          );
+        } catch {
+          // Best-effort — polling will still work once the backend writes progress.
+        }
+
         if (useBatchUpload) {
           return await ingestFiles(filesToUpload, uploadId);
         }
@@ -166,13 +182,11 @@ function UploadPage() {
 
         for (let i = 0; i < total; i++) {
           const file = filesToUpload[i];
-          setUploadStatus("Uploading Documents");
           setUploadSubStatus(
             total > 1
               ? `Uploading file ${i + 1} of ${total}: ${file.name}`
               : `Uploading ${file.name}...`,
           );
-          setUploadProgress(Math.max(1, Math.floor((i / total) * 10)));
 
           try {
             const result = await uploadFileInChunks(file, uploadId);
@@ -183,8 +197,6 @@ function UploadPage() {
           } catch (err: any) {
             combined.errors.push(`${file.name}: processing failed — ${err.message || err}`);
           }
-
-          setUploadProgress(Math.floor(((i + 1) / total) * 100));
         }
 
         return combined;

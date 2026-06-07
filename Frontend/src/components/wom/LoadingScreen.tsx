@@ -42,10 +42,28 @@ export function LoadingScreen({
   fileProgress?: FileUploadProgress[];
 }) {
   const [displayProgress, setDisplayProgress] = useState(0);
+  const maxProgressRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const tracked = progressValue !== undefined;
-  const activeStep = getActiveStepIndex(tracked ? progressValue : displayProgress);
-  const shownProgress = tracked ? progressValue : displayProgress;
+
+  useEffect(() => {
+    if (tracked && progressValue !== undefined) {
+      maxProgressRef.current = Math.max(maxProgressRef.current, progressValue);
+    }
+  }, [tracked, progressValue]);
+
+  useEffect(() => {
+    return () => {
+      maxProgressRef.current = 0;
+    };
+  }, []);
+
+  const activeStep = getActiveStepIndex(
+    tracked ? Math.max(maxProgressRef.current, progressValue ?? 0) : displayProgress,
+  );
+  const shownProgress = tracked
+    ? Math.max(maxProgressRef.current, progressValue ?? 0)
+    : displayProgress;
 
   useEffect(() => {
     const originalOverflow = document.body.style.overflow;

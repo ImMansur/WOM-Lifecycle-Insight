@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import List
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
+from pydantic import BaseModel
 
 from models import (
     ConfirmDuplicatesRequest,
@@ -17,13 +18,30 @@ from models import (
 from services.document_intelligence import extract_text, extract_text_from_docx
 from services.openai_service import process_document
 from services.blob_storage import upload_file, generate_upload_sas, download_blob, stage_block, commit_blocks
-from store import recommendation_store
+from store import recommendation_store, upload_progress_store_fs
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["ingest"])
 
 upload_progress_store: dict[str, dict] = {}
+
+# Per-file progress: 0–18% = chunk upload, 18–100% = processing pipeline.
+_UPLOAD_PHASE_MAX = 18
+
+
+def _scale_pipeline_progress(raw: int) -> int:
+    """Map internal pipeline steps (5–100) into 18–100 so progress never jumps backward after upload."""
+    clamped = max(5, min(100, raw))
+    span = 100 - _UPLOAD_PHASE_MAX
+    return _UPLOAD_PHASE_MAX + int((clamped - 5) * span / (100 - 5))
+
+
+def init_upload_progress(upload_id: str, filenames: list[str]) -> None:
+    """Pre-register every file so overall progress is averaged across the full batch."""
+    for filename in filenames:
+        update_upload_progress(upload_id, filename, 0, "Queued...")
+
 
 # PyMuPDF is not reliably thread-safe — serialize compression across concurrent batch tasks.
 _compression_lock: "asyncio.Lock | None" = None
@@ -54,6 +72,9 @@ def update_upload_progress(upload_id: str | None, filename: str, progress: int, 
         }
     
     store = upload_progress_store[upload_id]
+    prev_progress = store["files"].get(filename, {}).get("progress", 0)
+    progress = max(prev_progress, progress)
+
     store["files"][filename] = {
         "progress": progress,
         "substatus": substatus
@@ -73,14 +94,41 @@ def update_upload_progress(upload_id: str | None, filename: str, progress: int, 
         active_substatuses = [f["substatus"] for f in files.values() if f["progress"] < 100]
         store["substatus"] = active_substatuses[0] if active_substatuses else "Finalizing..."
 
+    upload_progress_store_fs.save(upload_id, store)
+    _maybe_cleanup_progress(upload_id)
+
+
+def _maybe_cleanup_progress(upload_id: str) -> None:
+    store = upload_progress_store_fs.get(upload_id)
+    if not store:
+        return
+    files = store.get("files", {})
+    if files and all(f.get("progress", 0) >= 100 for f in files.values()):
+        upload_progress_store_fs.delete(upload_id)
+
+
 @router.get("/ingest/status/{upload_id}")
 async def get_ingest_status(upload_id: str):
-    return upload_progress_store.get(upload_id, {
+    stored = upload_progress_store_fs.get(upload_id)
+    if stored:
+        return stored
+    return {
         "progress": 0,
         "status": "Initializing...",
-        "substatus": "Preparing pipeline..."
-    })
+        "substatus": "Preparing pipeline...",
+    }
 
+
+class InitProgressRequest(BaseModel):
+    upload_id: str
+    filenames: list[str]
+
+
+@router.post("/ingest/init-progress", status_code=status.HTTP_200_OK)
+async def register_upload_progress(payload: InitProgressRequest):
+    """Register all expected filenames before upload begins (used for multi-file Vercel uploads)."""
+    init_upload_progress(payload.upload_id, payload.filenames)
+    return {"registered": len(payload.filenames)}
 
 
 def log_optimization_event(filename: str, original_size: int, compressed_size: int, bypass_di: bool, pages: int) -> None:
@@ -305,7 +353,7 @@ async def _extract_and_compress_one_file(
     upload_id: str | None = None,
 ) -> tuple[Recommendation | None, str | None]:
     """Runs PDF compression, storage uploading, and text extraction/AI recommendation."""
-    update_upload_progress(upload_id, filename, 5, "Starting processing...")
+    update_upload_progress(upload_id, filename, _scale_pipeline_progress(5), "Starting processing...")
     ext = Path(filename).suffix.lower()
     source_type = ext.lstrip(".").upper()
 
@@ -316,7 +364,7 @@ async def _extract_and_compress_one_file(
 
     # Compress PDF if applicable
     if ext == ".pdf":
-        update_upload_progress(upload_id, filename, 15, "Compressing PDF document...")
+        update_upload_progress(upload_id, filename, _scale_pipeline_progress(15), "Compressing PDF document...")
         from services.pdf_compressor import compress_pdf_bytes
         import asyncio
         async with _get_compression_lock():
@@ -328,7 +376,7 @@ async def _extract_and_compress_one_file(
             compressed_size = len(file_bytes)
             # Re-upload compressed version to Blob Storage
             try:
-                update_upload_progress(upload_id, filename, 25, "Uploading compressed PDF...")
+                update_upload_progress(upload_id, filename, _scale_pipeline_progress(25), "Uploading compressed PDF...")
                 from services.blob_storage import upload_file
                 upload_file(file_bytes, filename)
             except Exception as e:
@@ -336,7 +384,7 @@ async def _extract_and_compress_one_file(
 
     try:
         converted_docx_name: str | None = None
-        update_upload_progress(upload_id, filename, 35, "Extracting text layers (OCR)...")
+        update_upload_progress(upload_id, filename, _scale_pipeline_progress(35), "Extracting text layers (OCR)...")
         if ext in {".doc", ".docx"}:
             docx_text = extract_text_from_docx(file_bytes)
             if len(docx_text.strip()) >= 100:
@@ -350,7 +398,7 @@ async def _extract_and_compress_one_file(
         else:
             extracted_text, is_ocr_needed = await extract_text(file_bytes, filename)
 
-        update_upload_progress(upload_id, filename, 65, "Analyzing with OpenAI...")
+        update_upload_progress(upload_id, filename, _scale_pipeline_progress(65), "Analyzing with OpenAI...")
         recommendation = await process_document(
             file_bytes=file_bytes,
             filename=filename,
@@ -462,13 +510,13 @@ async def ingest_chunk(
     if chunk_index < total_chunks - 1:
         # Estimate upload progress of chunks
         if upload_id:
-            pct = int(((chunk_index + 1) / total_chunks) * 100)
-            update_upload_progress(upload_id, filename, max(1, pct - 5), f"Uploading chunk {chunk_index + 1}/{total_chunks}...")
+            pct = int(((chunk_index + 1) / total_chunks) * _UPLOAD_PHASE_MAX)
+            update_upload_progress(upload_id, filename, max(1, pct), f"Uploading chunk {chunk_index + 1}/{total_chunks}...")
         return {"staged": True, "chunk_index": chunk_index, "total_chunks": total_chunks}
 
     # Final chunk: commit all staged blocks into one blob then process.
     if upload_id:
-        update_upload_progress(upload_id, filename, 95, "Assembling document...")
+        update_upload_progress(upload_id, filename, _UPLOAD_PHASE_MAX, "Assembling document...")
     all_block_ids = [base64.b64encode(f"{i:08d}".encode()).decode() for i in range(total_chunks)]
     blob_url = commit_blocks(filename, all_block_ids)
 

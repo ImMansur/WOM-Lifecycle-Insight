@@ -349,3 +349,45 @@ class CompressionLogStore:
 
 compression_log_store = CompressionLogStore()
 
+
+class UploadProgressStore:
+    """Firestore-backed upload progress — shared across Vercel serverless instances."""
+
+    def __init__(self) -> None:
+        self.db = initialize_firestore()
+        self.ready = self.db is not None
+        self._memory: dict[str, dict] = {}
+
+    def get(self, upload_id: str) -> dict | None:
+        if self.ready:
+            try:
+                doc = self.db.collection("upload_progress").document(upload_id).get()
+                if doc.exists:
+                    data = doc.to_dict()
+                    self._memory[upload_id] = data
+                    return data
+            except Exception as e:
+                logging.error(f"Firestore error in UploadProgressStore.get(): {e}")
+        return self._memory.get(upload_id)
+
+    def save(self, upload_id: str, data: dict) -> None:
+        self._memory[upload_id] = data
+        if not self.ready:
+            return
+        try:
+            self.db.collection("upload_progress").document(upload_id).set(data)
+        except Exception as e:
+            logging.error(f"Firestore error in UploadProgressStore.save(): {e}")
+
+    def delete(self, upload_id: str) -> None:
+        self._memory.pop(upload_id, None)
+        if not self.ready:
+            return
+        try:
+            self.db.collection("upload_progress").document(upload_id).delete()
+        except Exception as e:
+            logging.error(f"Firestore error in UploadProgressStore.delete(): {e}")
+
+
+upload_progress_store_fs = UploadProgressStore()
+

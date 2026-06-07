@@ -55,6 +55,21 @@ export async function fetchIngestStatus(uploadId: string): Promise<IngestProgres
   return res.json();
 }
 
+export async function initUploadProgress(
+  uploadId: string,
+  filenames: string[],
+): Promise<void> {
+  const res = await fetch(`${BASE}/api/ingest/init-progress`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ upload_id: uploadId, filenames }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Failed to init upload progress (${res.status}): ${text}`);
+  }
+}
+
 export async function ingestFiles(files: File[], uploadId?: string): Promise<IngestResponse> {
   const form = new FormData();
   for (const file of files) {
@@ -81,7 +96,11 @@ const CHUNK_SIZE = 3.5 * 1024 * 1024;
  * CORS required). On the final chunk the backend assembles and processes the
  * file, returning the normal IngestResponse.
  */
-export async function uploadFileInChunks(file: File, uploadId?: string): Promise<IngestResponse> {
+export async function uploadFileInChunks(
+  file: File,
+  uploadId?: string,
+  onChunkProgress?: (pct: number) => void,
+): Promise<IngestResponse> {
   const totalChunks = Math.max(1, Math.ceil(file.size / CHUNK_SIZE));
 
   for (let i = 0; i < totalChunks; i++) {
@@ -103,6 +122,8 @@ export async function uploadFileInChunks(file: File, uploadId?: string): Promise
       const text = await res.text();
       throw new Error(`Ingest failed (${res.status}): ${text}`);
     }
+
+    onChunkProgress?.(Math.round(((i + 1) / totalChunks) * 100));
 
     if (i === totalChunks - 1) {
       return res.json() as Promise<IngestResponse>;
