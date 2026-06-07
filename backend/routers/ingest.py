@@ -71,7 +71,7 @@ def log_optimization_event(filename: str, original_size: int, compressed_size: i
 
 
 ALLOWED_EXTENSIONS = {".pdf", ".doc", ".docx"}
-MAX_FILE_SIZE_MB = 200
+MAX_FILE_SIZE_MB = 10
 MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
 
 
@@ -134,6 +134,7 @@ async def ingest_files(files: List[UploadFile] = File(...)):
         for combo in _get_combination_keys(r):
             existing_by_combo[combo] = r
 
+    total_batch_size = 0
     for upload in files:
         filename = upload.filename or "unknown"
         ext = Path(filename).suffix.lower()
@@ -144,13 +145,15 @@ async def ingest_files(files: List[UploadFile] = File(...)):
 
         file_bytes = await upload.read()
         original_size = len(file_bytes)
+        
+        if total_batch_size + original_size > MAX_FILE_SIZE_BYTES:
+            errors.append(f"{filename}: total upload size exceeded 10MB limit. Skipping.")
+            continue
+            
+        total_batch_size += original_size
         compressed_size = original_size
         pages = 0
         bypassed = False
-
-        if len(file_bytes) > MAX_FILE_SIZE_BYTES:
-            errors.append(f"{filename}: file exceeds {MAX_FILE_SIZE_MB} MB limit.")
-            continue
 
         if len(file_bytes) == 0:
             errors.append(f"{filename}: empty file.")
@@ -458,6 +461,7 @@ async def ingest_from_blob(blob_names: list[str]):
         for combo in _get_combination_keys(r):
             existing_by_combo[combo] = r
 
+    total_batch_size = 0
     for blob_name in blob_names:
         ext = Path(blob_name).suffix.lower()
         if ext not in ALLOWED_EXTENSIONS:
@@ -468,6 +472,13 @@ async def ingest_from_blob(blob_names: list[str]):
         if file_bytes is None:
             errors.append(f"{blob_name}: could not download from blob storage.")
             continue
+            
+        original_size = len(file_bytes)
+        if total_batch_size + original_size > MAX_FILE_SIZE_BYTES:
+            errors.append(f"{blob_name}: total upload size exceeded 10MB limit. Skipping.")
+            continue
+            
+        total_batch_size += original_size
 
         blob_url = f"https://blob/{blob_name}"  # approximate; real URL already stored during SAS upload
 

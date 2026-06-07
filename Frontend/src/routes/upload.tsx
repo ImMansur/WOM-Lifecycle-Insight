@@ -206,9 +206,25 @@ function UploadPage() {
 
   const addFiles = (incoming: FileList | File[]) => {
     const filtered = Array.from(incoming).filter((f) => /\.(pdf|doc|docx)$/i.test(f.name));
+    const MAX_TOTAL_SIZE = 10 * 1024 * 1024; // 10MB
+
     setFiles((prev) => {
       const names = new Set(prev.map((f) => f.name));
-      return [...prev, ...filtered.filter((f) => !names.has(f.name))];
+      const newFiles = filtered.filter((f) => !names.has(f.name));
+      if (newFiles.length === 0) return prev;
+
+      const currentSize = prev.reduce((acc, f) => acc + f.size, 0);
+      const incomingSize = newFiles.reduce((acc, f) => acc + f.size, 0);
+
+      if (currentSize + incomingSize > MAX_TOTAL_SIZE) {
+        addNotification({
+          fileName: "Limit Exceeded",
+          status: "error",
+          message: `Total upload size cannot exceed 10MB. Selected files (${((currentSize + incomingSize) / 1024 / 1024).toFixed(1)} MB) would cross the limit.`,
+        });
+        return prev;
+      }
+      return [...prev, ...newFiles];
     });
   };
 
@@ -347,7 +363,7 @@ function UploadPage() {
                   or click to browse from your computer
                 </p>
                 <p className="mt-3 text-[10px] text-muted-foreground/60 uppercase tracking-widest font-mono">
-                  PDF, DOC, DOCX up to 200MB
+                  PDF, DOC, DOCX up to 10MB TOTAL
                 </p>
               </div>
             </div>
