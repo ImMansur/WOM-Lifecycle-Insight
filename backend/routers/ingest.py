@@ -206,7 +206,7 @@ def log_optimization_event(filename: str, original_size: int, compressed_size: i
 ALLOWED_EXTENSIONS = {".pdf", ".doc", ".docx"}
 MAX_FILE_SIZE_MB = 10
 MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
-MAX_PAGES = int(os.environ.get("MAX_PAGES", os.environ.get("DI_MAX_PAGES", "50")))
+MAX_PAGES = int(os.environ.get("MAX_PAGES", os.environ.get("DI_MAX_PAGES", "30")))
 
 
 def _page_limit_error(filename: str, pages: int) -> str:

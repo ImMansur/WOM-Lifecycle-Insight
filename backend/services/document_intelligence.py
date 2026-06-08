@@ -36,8 +36,8 @@ async def extract_text(file_bytes: bytes, filename: str) -> tuple[str, bool]:
     endpoint = os.environ["DOCUMENT_INTELLIGENCE_ENDPOINT"]
     key = os.environ["DOCUMENT_INTELLIGENCE_KEY"]
     model_id = os.environ.get("DI_MODEL_ID", "prebuilt-layout")
-    # Hard cap at 50 pages per file — configurable via DI_MAX_PAGES env var.
-    max_pages = int(os.environ.get("DI_MAX_PAGES", "50"))
+    # Hard cap at 30 pages per file — configurable via DI_MAX_PAGES env var.
+    max_pages = int(os.environ.get("DI_MAX_PAGES", "30"))
 
     try:
         async with DocumentIntelligenceClient(

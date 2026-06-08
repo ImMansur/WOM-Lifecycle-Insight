@@ -58,7 +58,7 @@ export const Route = createFileRoute("/upload")({
 // Stay safely under Vercel's 4.5 MB function body limit for batch uploads
 const VERCEL_SAFE_BATCH_BYTES = 4 * 1024 * 1024;
 const MAX_TOTAL_SIZE = 10 * 1024 * 1024;
-const MAX_TOTAL_PAGES = 50;
+const MAX_TOTAL_PAGES = 30;
 
 type BlockedFile = {
   name: string;
