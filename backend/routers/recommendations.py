@@ -95,20 +95,26 @@ async def patch_recommendation(rec_id: str, patch: PatchRecommendation):
     fields["confidence"] = "High"
     fields["humanReviewed"] = True
 
-    # Recompute lifecycle if a certificateDate is being patched (or was already on the record)
+    # Recompute lifecycle and recommendation text based on updated/existing fields
+    existing = recommendation_store.get(rec_id)
     cert_date = fields.get("certificateDate")
-    if not cert_date:
-        # Fall back to the existing record's certificateDate
-        existing = recommendation_store.get(rec_id)
-        if existing:
-            cert_date = existing.certificateDate
-    if cert_date:
-        lifecycle = _compute_lifecycle_fields(cert_date)
-        # Only update lifecycle fields when we get a real status (not Manual review)
-        if lifecycle.get("status") != "Manual review":
-            for key in ("recertificationDue", "ageMonths", "monthsToRecert", "status", "priority", "lifecycleDate"):
-                if lifecycle.get(key) is not None:
-                    fields[key] = lifecycle[key]
+    if cert_date is None and existing:
+        cert_date = existing.certificateDate
+
+    lifecycle = _compute_lifecycle_fields(cert_date)
+    from services.openai_service import _build_recommendation_text
+    
+    # Merge existing record with the incoming fields to get the full state
+    existing_dump = existing.model_dump() if existing else {}
+    merged_data = {**existing_dump, **fields}
+    
+    rec_text, invoice_basis = _build_recommendation_text(rec_id, merged_data, lifecycle)
+    fields["recommendation"] = rec_text
+    if invoice_basis:
+        fields["invoiceBasis"] = invoice_basis
+
+    for key in ("recertificationDue", "ageMonths", "monthsToRecert", "status", "priority", "lifecycleDate"):
+        fields[key] = lifecycle.get(key)
 
     success = recommendation_store.update(rec_id, fields)
     if not success:

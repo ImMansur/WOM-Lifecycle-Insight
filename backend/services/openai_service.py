@@ -61,9 +61,10 @@ Extract the following fields (use null when not found):
 
 RULES:
 1. Return ONLY the JSON object, no markdown fences, no explanation.
-2. Dates must be YYYY-MM-DD or null.
+2. Dates must be YYYY-MM-DD or null. Do NOT hallucinate or guess dates from non-date text. If no explicit certificate date is found, set certificateDate to null.
 3. Arrays must be JSON arrays, never comma-separated strings.
 4. Do not invent data. If a field is not present, use null or [].
+5. If the document is NOT a Certificate of Conformance (CoC) or does not contain equipment manufacturing, inspection, or testing data (e.g. it is a generic town/region fact sheet, news article, marketing brochure, etc.), you MUST set all fields (except textPreview and notes) to null, and write a clear explanation in the "notes" field (e.g., "Document is a fact sheet, not a Certificate of Conformance. No certificate metadata found.").
 """.strip()
 
 _USER_TEMPLATE = """
@@ -162,7 +163,9 @@ def _build_recommendation_text(rec_id: str, data: dict[str, Any], lifecycle: dic
     invoice_basis = "; ".join(invoice_basis_parts) if invoice_basis_parts else None
 
     status = lifecycle.get("status", "")
-    if status == "Expired / overdue":
+    if not lifecycle.get("recertificationDue"):
+        rec_text = "No recommendation available: certificate date not found."
+    elif status == "Expired / overdue":
         action = "create recertification and aftermarket sales lead now"
         category = _guess_equipment_category(equip)
         rec_text = (
