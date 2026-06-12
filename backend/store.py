@@ -4,6 +4,8 @@ from __future__ import annotations
 import logging
 import os
 import json
+import tempfile
+from pathlib import Path
 from datetime import datetime, timezone
 from typing import List, Optional
 
@@ -351,42 +353,52 @@ compression_log_store = CompressionLogStore()
 
 
 class UploadProgressStore:
-    """Firestore-backed upload progress — shared across Vercel serverless instances."""
+    """File-system-backed upload progress — shared across local processes/workers without Firebase cost."""
 
     def __init__(self) -> None:
-        self.db = initialize_firestore()
-        self.ready = self.db is not None
+        self.temp_dir = Path(tempfile.gettempdir()) / "wom_upload_progress"
+        try:
+            self.temp_dir.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            logging.error(f"Failed to create temp directory for upload progress: {e}")
         self._memory: dict[str, dict] = {}
 
+    def _get_path(self, upload_id: str) -> Path:
+        # Sanitize upload_id to prevent path traversal
+        safe_id = "".join(c for c in upload_id if c.isalnum() or c in "-_")
+        return self.temp_dir / f"{safe_id}.json"
+
     def get(self, upload_id: str) -> dict | None:
-        if self.ready:
+        # Check memory first for speed
+        if upload_id in self._memory:
+            return self._memory[upload_id]
+            
+        path = self._get_path(upload_id)
+        if path.exists():
             try:
-                doc = self.db.collection("upload_progress").document(upload_id).get()
-                if doc.exists:
-                    data = doc.to_dict()
-                    self._memory[upload_id] = data
-                    return data
+                data = json.loads(path.read_text(encoding="utf-8"))
+                self._memory[upload_id] = data
+                return data
             except Exception as e:
-                logging.error(f"Firestore error in UploadProgressStore.get(): {e}")
-        return self._memory.get(upload_id)
+                logging.error(f"Error reading upload progress file: {e}")
+        return None
 
     def save(self, upload_id: str, data: dict) -> None:
         self._memory[upload_id] = data
-        if not self.ready:
-            return
+        path = self._get_path(upload_id)
         try:
-            self.db.collection("upload_progress").document(upload_id).set(data)
+            path.write_text(json.dumps(data), encoding="utf-8")
         except Exception as e:
-            logging.error(f"Firestore error in UploadProgressStore.save(): {e}")
+            logging.error(f"Error writing upload progress file: {e}")
 
     def delete(self, upload_id: str) -> None:
         self._memory.pop(upload_id, None)
-        if not self.ready:
-            return
-        try:
-            self.db.collection("upload_progress").document(upload_id).delete()
-        except Exception as e:
-            logging.error(f"Firestore error in UploadProgressStore.delete(): {e}")
+        path = self._get_path(upload_id)
+        if path.exists():
+            try:
+                path.unlink()
+            except Exception as e:
+                logging.error(f"Error deleting upload progress file: {e}")
 
 
 upload_progress_store_fs = UploadProgressStore()

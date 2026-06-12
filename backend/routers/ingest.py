@@ -97,13 +97,10 @@ def update_upload_progress(upload_id: str | None, filename: str, progress: int, 
         store["substatus"] = active_substatuses[0] if active_substatuses else "Finalizing..."
 
     upload_progress_store_fs.save(upload_id, store)
-    _maybe_cleanup_progress(upload_id)
+    _maybe_cleanup_progress(upload_id, store)
 
 
-def _maybe_cleanup_progress(upload_id: str) -> None:
-    store = upload_progress_store_fs.get(upload_id)
-    if not store:
-        return
+def _maybe_cleanup_progress(upload_id: str, store: dict) -> None:
     files = store.get("files", {})
     if files and all(f.get("progress", 0) >= 100 for f in files.values()):
         upload_progress_store_fs.delete(upload_id)
