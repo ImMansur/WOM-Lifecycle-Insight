@@ -1,6 +1,10 @@
 import type { Recommendation } from "./wom-data";
 
-const BASE = import.meta.env.VITE_API_URL ?? "";
+const BASE =
+  typeof window !== "undefined" &&
+  (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
+    ? (import.meta.env.VITE_API_URL ?? "http://localhost:8000")
+    : "";
 
 export interface Summary {
   inputFolder: string;
