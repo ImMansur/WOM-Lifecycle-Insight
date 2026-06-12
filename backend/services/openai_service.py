@@ -46,7 +46,7 @@ Extract the following fields (use null when not found):
       part. If the cert lists "EQUIPMENT SERIAL NO: A-28717" alongside
       "PART NO: M4800 QUANTITY: 1", then A-28717 belongs to M4800.
       Use [] if no serials are listed for this row.
-  Scan the entire document top-to-bottom; never stop at the first row.
+  Scan the entire document top-to-bottom across all pages; never stop at the first row or first page.
 - partNumbers: array of objects (legacy flat list, used as a fallback when
   lineItems cannot be grouped). Each: { "number", "description", "qty" }.
   You may leave this empty if lineItems is populated.
@@ -65,6 +65,7 @@ RULES:
 3. Arrays must be JSON arrays, never comma-separated strings.
 4. Do not invent data. If a field is not present, use null or [].
 5. If the document is NOT a Certificate of Conformance (CoC) or does not contain equipment manufacturing, inspection, or testing data (e.g. it is a generic town/region fact sheet, news article, marketing brochure, etc.), you MUST set all fields (except textPreview and notes) to null, and write a clear explanation in the "notes" field (e.g., "Document is a fact sheet, not a Certificate of Conformance. No certificate metadata found.").
+6. If the document contains multiple Certificate of Conformance sheets, pages, or a primary certificate followed by secondary certificates, component lists, or annexes (even with different dates, sales orders, or headers on subsequent pages), you MUST scan all pages and extract all parts and line items from ALL sections and pages. Merge all extracted parts into the single 'lineItems' list. For the top-level metadata fields (customer, salesOrder, purchaseOrder, certificateDate), use the values from the primary/first certificate sheet.
 """.strip()
 
 _USER_TEMPLATE = """
