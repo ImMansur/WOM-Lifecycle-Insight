@@ -5,6 +5,7 @@ import {
   ingestFiles,
   uploadFileInChunks,
   fetchIngestStatus,
+  deleteIngestStatus,
   initUploadProgress,
   validateDocument,
   confirmIngestUpdates,
@@ -70,22 +71,51 @@ type BlockedFile = {
 function startIngestStatusPolling(
   uploadId: string,
   onUpdate: (status: IngestProgress) => void,
-): () => void {
+): { stop: () => void; promise: Promise<IngestResponse> } {
   let stopped = false;
+  let rejectPromise: (err: Error) => void;
+  let resolvePromise: (res: IngestResponse) => void;
+
+  const promise = new Promise<IngestResponse>((resolve, reject) => {
+    resolvePromise = resolve;
+    rejectPromise = reject;
+  });
+
   const poll = async () => {
     while (!stopped) {
       try {
         const status = await fetchIngestStatus(uploadId);
         onUpdate(status);
+
+        if (status.progress >= 100) {
+          stopped = true;
+          if (status.status === "Failed") {
+            rejectPromise(new Error(status.substatus || "Ingestion failed"));
+          } else if (status.result) {
+            resolvePromise(status.result);
+          } else {
+            resolvePromise({
+              processed: 0,
+              recommendations: [],
+              pendingDuplicates: [],
+              errors: [status.substatus || "Ingestion completed without result data."],
+            });
+          }
+          break;
+        }
       } catch {
         // Ignore transient polling errors
       }
-      await new Promise((r) => setTimeout(r, 3000));
+      await new Promise((r) => setTimeout(r, 2000));
     }
   };
   void poll();
-  return () => {
-    stopped = true;
+
+  return {
+    stop: () => {
+      stopped = true;
+    },
+    promise,
   };
 }
 
@@ -135,7 +165,7 @@ function UploadPage() {
         setUploadProgress((prev) => Math.max(prev, Math.min(100, next)));
       };
 
-      const stopPolling = startIngestStatusPolling(uploadId, (status) => {
+      const { stop: stopPolling, promise: pollingPromise } = startIngestStatusPolling(uploadId, (status) => {
         if (status.progress > 0) {
           applyProgress(status.progress);
         }
@@ -182,7 +212,14 @@ function UploadPage() {
         }
 
         if (useBatchUpload) {
-          return await ingestFiles(filesToUpload, uploadId);
+          await ingestFiles(filesToUpload, uploadId);
+          const finalResult = await pollingPromise;
+          try {
+            await deleteIngestStatus(uploadId);
+          } catch {
+            // best effort cleanup
+          }
+          return finalResult;
         }
 
         const combined: IngestResponse = {
@@ -201,14 +238,26 @@ function UploadPage() {
           );
 
           try {
-            const result = await uploadFileInChunks(file, uploadId);
-            combined.processed += result.processed;
-            combined.recommendations.push(...result.recommendations);
-            combined.pendingDuplicates.push(...result.pendingDuplicates);
-            combined.errors.push(...result.errors);
+            await uploadFileInChunks(file, uploadId);
           } catch (err: any) {
-            combined.errors.push(`${file.name}: processing failed — ${err.message || err}`);
+            combined.errors.push(`${file.name}: upload failed — ${err.message || err}`);
           }
+        }
+
+        try {
+          const finalResult = await pollingPromise;
+          combined.processed += finalResult.processed;
+          combined.recommendations.push(...finalResult.recommendations);
+          combined.pendingDuplicates.push(...finalResult.pendingDuplicates);
+          combined.errors.push(...finalResult.errors);
+        } catch (err: any) {
+          combined.errors.push(`Processing failed — ${err.message || err}`);
+        }
+
+        try {
+          await deleteIngestStatus(uploadId);
+        } catch {
+          // best effort cleanup
         }
 
         return combined;

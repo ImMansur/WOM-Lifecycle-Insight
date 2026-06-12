@@ -120,7 +120,7 @@ function UploadDialog({
 
   const qc = useQueryClient();
   const mutation = useMutation({
-    mutationFn: ingestFiles,
+    mutationFn: (filesToUpload: File[]) => ingestFiles(filesToUpload),
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ["recommendations"] });
       setSavedCount(data.processed);

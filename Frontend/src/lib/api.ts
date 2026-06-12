@@ -51,12 +51,22 @@ export interface IngestProgress {
   status: string;
   substatus: string;
   files?: Record<string, { progress: number; substatus: string }>;
+  result?: IngestResponse;
 }
 
 export async function fetchIngestStatus(uploadId: string): Promise<IngestProgress> {
   const res = await fetch(`${BASE}/api/ingest/status/${encodeURIComponent(uploadId)}`);
   if (!res.ok) throw new Error("Failed to fetch ingest status");
   return res.json();
+}
+
+export async function deleteIngestStatus(uploadId: string): Promise<void> {
+  const res = await fetch(`${BASE}/api/ingest/status/${encodeURIComponent(uploadId)}`, {
+    method: "DELETE",
+  });
+  if (!res.ok && res.status !== 204) {
+    throw new Error(`Failed to delete ingest status: ${res.statusText}`);
+  }
 }
 
 export async function initUploadProgress(
@@ -181,8 +191,9 @@ export async function getUploadSas(filename: string): Promise<UploadSasResponse>
  * Tell the backend to process files that are already in Azure Blob Storage.
  * Call this after uploading files via SAS URLs.
  */
-export async function ingestFromBlob(blobNames: string[]): Promise<IngestResponse> {
-  const res = await fetch(`${BASE}/api/ingest-from-blob`, {
+export async function ingestFromBlob(blobNames: string[], uploadId?: string): Promise<IngestResponse> {
+  const url = uploadId ? `${BASE}/api/ingest-from-blob?upload_id=${encodeURIComponent(uploadId)}` : `${BASE}/api/ingest-from-blob`;
+  const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(blobNames),

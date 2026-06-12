@@ -324,7 +324,7 @@ function UsersPage() {
                               u.role,
                             )}`}
                           >
-                            {getInitials(u.displayName)}
+                            {getInitials(u.displayName || "")}
                           </div>
                           <span className="absolute bottom-0 right-0 size-2.5 rounded-full bg-emerald-500 border-2 border-white dark:border-slate-900" />
                         </div>

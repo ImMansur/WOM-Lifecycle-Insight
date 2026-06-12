@@ -7,7 +7,9 @@ import os
 from pathlib import Path
 from typing import List
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
+import tempfile
+import uuid
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status, BackgroundTasks, Response
 from pydantic import BaseModel
 
 from models import (
@@ -97,13 +99,6 @@ def update_upload_progress(upload_id: str | None, filename: str, progress: int, 
         store["substatus"] = active_substatuses[0] if active_substatuses else "Finalizing..."
 
     upload_progress_store_fs.save(upload_id, store)
-    _maybe_cleanup_progress(upload_id, store)
-
-
-def _maybe_cleanup_progress(upload_id: str, store: dict) -> None:
-    files = store.get("files", {})
-    if files and all(f.get("progress", 0) >= 100 for f in files.values()):
-        upload_progress_store_fs.delete(upload_id)
 
 
 @router.get("/ingest/status/{upload_id}")
@@ -116,6 +111,13 @@ async def get_ingest_status(upload_id: str):
         "status": "Initializing...",
         "substatus": "Preparing pipeline...",
     }
+
+
+@router.delete("/ingest/status/{upload_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_ingest_status(upload_id: str):
+    """Clean up the upload progress file after retrieval."""
+    upload_progress_store_fs.delete(upload_id)
+    upload_progress_store.pop(upload_id, None)
 
 
 class InitProgressRequest(BaseModel):
@@ -256,8 +258,276 @@ def _get_combination_keys(rec: Recommendation) -> set[tuple[str, str, str, str, 
     return keys
 
 
-@router.post("/ingest", response_model=IngestResponse, status_code=status.HTTP_200_OK)
+# Background task definitions
+async def background_ingest_files(
+    upload_id: str,
+    temp_files: list[tuple[Path, str, str]],
+    initial_errors: list[str],
+):
+    try:
+        results: list[Recommendation] = []
+        errors: list[str] = list(initial_errors)
+        pending: list[PendingDuplicate] = []
+
+        all_existing = recommendation_store.all()
+        existing_by_combo: dict[tuple[str, str, str, str, str], Recommendation] = {}
+        for r in all_existing:
+            for combo in _get_combination_keys(r):
+                existing_by_combo[combo] = r
+
+        # 1. Read files and delete temp files
+        valid_files: list[tuple[bytes, str, str]] = []
+        for temp_path, filename, ext in temp_files:
+            try:
+                if temp_path.exists():
+                    file_bytes = temp_path.read_bytes()
+                    temp_path.unlink()
+                else:
+                    file_bytes = b""
+            except Exception as e:
+                logger.error("Failed to read/delete temp file %s: %s", temp_path, e)
+                file_bytes = b""
+            
+            if file_bytes:
+                valid_files.append((file_bytes, filename, ext))
+            else:
+                errors.append(f"{filename}: failed to read temporary file.")
+
+        # 2. Process concurrently (concurrency limit = 5)
+        import asyncio
+        semaphore = asyncio.Semaphore(5)
+
+        async def sem_process(fb: bytes, fn: str, ext: str):
+            async with semaphore:
+                return await _extract_and_compress_one_file(fb, fn, None, upload_id)
+
+        tasks = [sem_process(fb, fn, ext) for fb, fn, ext in valid_files]
+        gather_results = await asyncio.gather(*tasks)
+
+        # 3. Post-process recommendations
+        for rec, err in gather_results:
+            if err:
+                errors.append(err)
+                continue
+            if not rec:
+                continue
+
+            existing = recommendation_store.get(rec.id)
+            new_combos = _get_combination_keys(rec)
+            if existing is None and new_combos:
+                for combo in new_combos:
+                    if combo in existing_by_combo:
+                        existing = existing_by_combo[combo]
+                        break
+
+            if existing is not None:
+                pending.append(PendingDuplicate(
+                    existingId=existing.id,
+                    existingFile=existing.sourceFile,
+                    existingCustomer=existing.customer,
+                    existingSalesOrder=existing.salesOrder,
+                    existingCertificateDate=existing.certificateDate,
+                    newRecommendation=rec,
+                ))
+                continue
+
+            for combo in new_combos:
+                existing_by_combo[combo] = rec
+            results.append(rec)
+            recommendation_store.add(rec)
+
+        response_data = {
+            "processed": len(results),
+            "recommendations": [r.model_dump() for r in results],
+            "pendingDuplicates": [d.model_dump() for d in pending],
+            "errors": errors,
+        }
+
+        if upload_id not in upload_progress_store:
+            upload_progress_store[upload_id] = {
+                "progress": 100,
+                "status": "Completed",
+                "substatus": "Completed",
+                "files": {}
+            }
+        store = upload_progress_store[upload_id]
+        store["progress"] = 100
+        store["status"] = f"Processed {len(results)} of {len(valid_files)} documents"
+        store["substatus"] = "Completed"
+        store["result"] = response_data
+        upload_progress_store_fs.save(upload_id, store)
+    except Exception as exc:
+        logger.exception("Error in background ingest files task")
+        store = upload_progress_store.get(upload_id) or {"progress": 100, "files": {}}
+        store["progress"] = 100
+        store["status"] = "Failed"
+        store["substatus"] = str(exc)
+        store["result"] = {
+            "processed": 0,
+            "recommendations": [],
+            "pendingDuplicates": [],
+            "errors": [f"Processing failed: {exc}"],
+        }
+        upload_progress_store_fs.save(upload_id, store)
+
+
+async def background_ingest_from_blob(
+    upload_id: str,
+    valid_downloads: list[tuple[bytes, str, str]],
+    initial_errors: list[str],
+):
+    try:
+        results: list[Recommendation] = []
+        errors: list[str] = list(initial_errors)
+        pending: list[PendingDuplicate] = []
+
+        all_existing = recommendation_store.all()
+        existing_by_combo: dict = {}
+        for r in all_existing:
+            for combo in _get_combination_keys(r):
+                existing_by_combo[combo] = r
+
+        # Process concurrently (concurrency limit = 5)
+        import asyncio
+        semaphore = asyncio.Semaphore(5)
+
+        async def sem_process(file_bytes: bytes, filename: str, blob_url: str):
+            async with semaphore:
+                return await _extract_and_compress_one_file(file_bytes, filename, blob_url, upload_id)
+
+        tasks = [sem_process(fb, fn, bu) for fb, fn, bu in valid_downloads]
+        gather_results = await asyncio.gather(*tasks)
+
+        # Post-process recommendations
+        for rec, err in gather_results:
+            if err:
+                errors.append(err)
+                continue
+            if not rec:
+                continue
+
+            existing = recommendation_store.get(rec.id)
+            new_combos = _get_combination_keys(rec)
+            if existing is None and new_combos:
+                for combo in new_combos:
+                    if combo in existing_by_combo:
+                        existing = existing_by_combo[combo]
+                        break
+
+            if existing is not None:
+                pending.append(PendingDuplicate(
+                    existingId=existing.id,
+                    existingFile=existing.sourceFile,
+                    existingCustomer=existing.customer,
+                    existingSalesOrder=existing.salesOrder,
+                    existingCertificateDate=existing.certificateDate,
+                    newRecommendation=rec,
+                ))
+                continue
+
+            for combo in new_combos:
+                existing_by_combo[combo] = rec
+            results.append(rec)
+            recommendation_store.add(rec)
+
+        response_data = {
+            "processed": len(results),
+            "recommendations": [r.model_dump() for r in results],
+            "pendingDuplicates": [d.model_dump() for d in pending],
+            "errors": errors,
+        }
+
+        if upload_id not in upload_progress_store:
+            upload_progress_store[upload_id] = {
+                "progress": 100,
+                "status": "Completed",
+                "substatus": "Completed",
+                "files": {}
+            }
+        store = upload_progress_store[upload_id]
+        store["progress"] = 100
+        store["status"] = f"Processed {len(results)} of {len(valid_downloads)} documents"
+        store["substatus"] = "Completed"
+        store["result"] = response_data
+        upload_progress_store_fs.save(upload_id, store)
+    except Exception as exc:
+        logger.exception("Error in background ingest from blob task")
+        store = upload_progress_store.get(upload_id) or {"progress": 100, "files": {}}
+        store["progress"] = 100
+        store["status"] = "Failed"
+        store["substatus"] = str(exc)
+        store["result"] = {
+            "processed": 0,
+            "recommendations": [],
+            "pendingDuplicates": [],
+            "errors": [f"Processing failed: {exc}"],
+        }
+        upload_progress_store_fs.save(upload_id, store)
+
+
+async def background_process_chunk(
+    upload_id: str,
+    file_bytes: bytes,
+    filename: str,
+    blob_url: str | None,
+):
+    try:
+        all_existing = recommendation_store.all()
+        existing_by_combo: dict = {}
+        for r in all_existing:
+            for combo in _get_combination_keys(r):
+                existing_by_combo[combo] = r
+
+        rec, dup, err = await _process_one_file(file_bytes, filename, blob_url, existing_by_combo, upload_id)
+        
+        if upload_id not in upload_progress_store:
+            upload_progress_store[upload_id] = {
+                "progress": 100,
+                "status": "Completed",
+                "substatus": "Completed",
+                "files": {}
+            }
+        store = upload_progress_store[upload_id]
+        
+        # Merge results to support multi-file chunk uploads
+        existing_result = store.get("result") or {
+            "processed": 0,
+            "recommendations": [],
+            "pendingDuplicates": [],
+            "errors": []
+        }
+        
+        merged_result = {
+            "processed": existing_result.get("processed", 0) + (1 if rec else 0),
+            "recommendations": existing_result.get("recommendations", []) + ([rec.model_dump()] if rec else []),
+            "pendingDuplicates": existing_result.get("pendingDuplicates", []) + ([dup.model_dump()] if dup else []),
+            "errors": existing_result.get("errors", []) + ([err] if err else []),
+        }
+
+        store["progress"] = 100
+        store["status"] = "Completed"
+        store["substatus"] = "Completed"
+        store["result"] = merged_result
+        upload_progress_store_fs.save(upload_id, store)
+    except Exception as exc:
+        logger.exception("Error in background chunk process task")
+        store = upload_progress_store.get(upload_id) or {"progress": 100, "files": {}}
+        store["progress"] = 100
+        store["status"] = "Failed"
+        store["substatus"] = str(exc)
+        store["result"] = {
+            "processed": 0,
+            "recommendations": [],
+            "pendingDuplicates": [],
+            "errors": [f"Processing failed: {exc}"],
+        }
+        upload_progress_store_fs.save(upload_id, store)
+
+
+@router.post("/ingest", status_code=status.HTTP_200_OK)
 async def ingest_files(
+    response: Response,
+    background_tasks: BackgroundTasks,
     files: List[UploadFile] = File(...),
     upload_id: str | None = None,
 ):
@@ -320,7 +590,28 @@ async def ingest_files(
         for _, filename, _ in valid_files:
             update_upload_progress(upload_id, filename, 0, "Queued...")
 
-    # 2. Process valid files concurrently (concurrency limit = 5)
+    if upload_id:
+        # Save files to temp directory so background tasks can read them
+        temp_dir = Path(tempfile.gettempdir()) / "wom_ingest_temp"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        
+        temp_files: list[tuple[Path, str, str]] = []
+        for file_bytes, filename, ext in valid_files:
+            temp_path = temp_dir / f"{uuid.uuid4()}{ext}"
+            temp_path.write_bytes(file_bytes)
+            temp_files.append((temp_path, filename, ext))
+
+        background_tasks.add_task(
+            background_ingest_files,
+            upload_id,
+            temp_files,
+            errors
+        )
+        response.status_code = status.HTTP_202_ACCEPTED
+        return {"status": "accepted", "upload_id": upload_id}
+
+    # 2. Synchronous fallback (if no upload_id provided)
+    # Process valid files concurrently (concurrency limit = 5)
     import asyncio
     semaphore = asyncio.Semaphore(5)
 
@@ -339,14 +630,6 @@ async def ingest_files(
         if not rec:
             continue
 
-        filename = rec.sourceFile
-
-        # Duplicate detection — two cases trigger an admin confirmation popup:
-        #   1. Same record ID already exists (re-upload of the *exact same*
-        #      file — content hash matched a previous upload).
-        #   2. Different ID but any 5-field business combination key (customer +
-        #      sales order + certificate date + item + serial) collides with an
-        #      existing record.
         existing = recommendation_store.get(rec.id)
         new_combos = _get_combination_keys(rec)
         if existing is None and new_combos:
@@ -364,15 +647,8 @@ async def ingest_files(
                 existingCertificateDate=existing.certificateDate,
                 newRecommendation=rec,
             ))
-            logger.info(
-                "Pending duplicate: incoming %s collides with existing %s (same %s)",
-                rec.id,
-                existing.id,
-                "file" if existing.id == rec.id else "business key combinations",
-            )
             continue
 
-        # Not a duplicate — save now and record the combination keys for in-batch dedupe.
         for combo in new_combos:
             existing_by_combo[combo] = rec
         results.append(rec)
@@ -517,6 +793,8 @@ async def _process_one_file(
 
 @router.post("/ingest-chunk", status_code=status.HTTP_200_OK)
 async def ingest_chunk(
+    response: Response,
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     filename: str = Form(...),
     chunk_index: int = Form(...),
@@ -570,8 +848,38 @@ async def ingest_chunk(
 
     page_err = _check_page_limit(file_bytes, filename, ext)
     if page_err:
-        return IngestResponse(processed=0, recommendations=[], pendingDuplicates=[], errors=[page_err])
+        if upload_id:
+            # Save error response in progress store
+            if upload_id not in upload_progress_store:
+                upload_progress_store[upload_id] = {"progress": 100, "files": {}}
+            store = upload_progress_store[upload_id]
+            store["progress"] = 100
+            store["status"] = "Failed"
+            store["substatus"] = page_err
+            store["result"] = {
+                "processed": 0,
+                "recommendations": [],
+                "pendingDuplicates": [],
+                "errors": [page_err],
+            }
+            upload_progress_store_fs.save(upload_id, store)
+            response.status_code = status.HTTP_202_ACCEPTED
+            return {"status": "accepted", "upload_id": upload_id}
+        else:
+            return IngestResponse(processed=0, recommendations=[], pendingDuplicates=[], errors=[page_err])
 
+    if upload_id:
+        background_tasks.add_task(
+            background_process_chunk,
+            upload_id,
+            file_bytes,
+            filename,
+            blob_url
+        )
+        response.status_code = status.HTTP_202_ACCEPTED
+        return {"status": "accepted", "upload_id": upload_id}
+
+    # Synchronous fallback
     all_existing = recommendation_store.all()
     existing_by_combo: dict = {}
     for r in all_existing:
@@ -611,8 +919,10 @@ async def get_upload_sas(filename: str):
 # Ingest-from-blob endpoint (used by the frontend after direct SAS upload)
 # ---------------------------------------------------------------------------
 
-@router.post("/ingest-from-blob", response_model=IngestResponse, status_code=status.HTTP_200_OK)
+@router.post("/ingest-from-blob", status_code=status.HTTP_200_OK)
 async def ingest_from_blob(
+    response: Response,
+    background_tasks: BackgroundTasks,
     blob_names: list[str],
     upload_id: str | None = None,
 ):
@@ -676,6 +986,17 @@ async def ingest_from_blob(
         for _, filename, _ in valid_downloads:
             update_upload_progress(upload_id, filename, 0, "Queued...")
 
+    if upload_id:
+        background_tasks.add_task(
+            background_ingest_from_blob,
+            upload_id,
+            valid_downloads,
+            errors
+        )
+        response.status_code = status.HTTP_202_ACCEPTED
+        return {"status": "accepted", "upload_id": upload_id}
+
+    # Synchronous fallback
     # 2. Process concurrently (concurrency limit = 5)
     import asyncio
     semaphore = asyncio.Semaphore(5)
