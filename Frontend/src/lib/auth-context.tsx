@@ -40,13 +40,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       clearTimeout(timeout);
       setLoading(true);
       if (firebaseUser) {
-        // Fetch role from Firestore via Backend API
+        // Fetch role from Firestore directly for speed, fallback to API
         let role = "Uploader";
         try {
-          const res = await fetchUserRole(firebaseUser.uid);
-          role = res.role || "Uploader";
+          const docRef = doc(db, "users", firebaseUser.uid);
+          const docSnap = await getDoc(docRef);
+          if (docSnap.exists() && docSnap.data().role) {
+            role = docSnap.data().role;
+          } else {
+            const res = await fetchUserRole(firebaseUser.uid);
+            role = res.role || "Uploader";
+          }
         } catch (e) {
-          console.error("Error fetching user profile from Firestore:", e);
+          console.error("Error fetching user profile directly, falling back to API:", e);
+          try {
+            const res = await fetchUserRole(firebaseUser.uid);
+            role = res.role || "Uploader";
+          } catch (e2) {
+            console.error("API fallback also failed:", e2);
+          }
         }
 
         setUser({

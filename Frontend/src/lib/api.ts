@@ -452,9 +452,17 @@ export async function deleteUser(uid: string): Promise<void> {
 }
 
 export async function fetchUserRole(uid: string): Promise<{ role: string }> {
-  const res = await fetch(`${BASE}/api/users/role/${encodeURIComponent(uid)}`);
-  if (!res.ok) throw new Error(`Failed to fetch user role: ${res.statusText}`);
-  return res.json();
+  for (let i = 0; i < 3; i++) {
+    try {
+      const res = await fetch(`${BASE}/api/users/role/${encodeURIComponent(uid)}`);
+      if (!res.ok) throw new Error(`Failed to fetch user role: ${res.statusText}`);
+      return await res.json();
+    } catch (err) {
+      if (i === 2) throw err;
+      await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1))); // exponential backoff 1s, 2s
+    }
+  }
+  return { role: "Uploader" };
 }
 
 // ─── Compression & Cost-Saving Logs ───────────────────────────────────────────
