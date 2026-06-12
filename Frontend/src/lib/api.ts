@@ -454,7 +454,10 @@ export async function deleteUser(uid: string): Promise<void> {
 export async function fetchUserRole(uid: string): Promise<{ role: string }> {
   for (let i = 0; i < 3; i++) {
     try {
-      const res = await fetch(`${BASE}/api/users/role/${encodeURIComponent(uid)}`);
+      const ts = new Date().getTime();
+      const res = await fetch(`${BASE}/api/users/role/${encodeURIComponent(uid)}?_t=${ts}`, {
+        cache: "no-store"
+      });
       if (!res.ok) throw new Error(`Failed to fetch user role: ${res.statusText}`);
       return await res.json();
     } catch (err) {
