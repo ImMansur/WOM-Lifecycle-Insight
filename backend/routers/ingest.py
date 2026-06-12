@@ -480,14 +480,15 @@ async def background_process_chunk(
 
         rec, dup, err = await _process_one_file(file_bytes, filename, blob_url, existing_by_combo, upload_id)
         
-        if upload_id not in upload_progress_store:
-            upload_progress_store[upload_id] = {
-                "progress": 100,
-                "status": "Completed",
-                "substatus": "Completed",
+        # Load progress state from filesystem or local memory
+        store = upload_progress_store_fs.get(upload_id) or upload_progress_store.get(upload_id)
+        if not store:
+            store = {
+                "progress": 0,
+                "status": "Processing documents...",
+                "substatus": "",
                 "files": {}
             }
-        store = upload_progress_store[upload_id]
         
         # Merge results to support multi-file chunk uploads
         existing_result = store.get("result") or {
@@ -504,23 +505,78 @@ async def background_process_chunk(
             "errors": existing_result.get("errors", []) + ([err] if err else []),
         }
 
-        store["progress"] = 100
-        store["status"] = "Completed"
-        store["substatus"] = "Completed"
+        # Update this file's progress to 100%
+        if "files" not in store:
+            store["files"] = {}
+        store["files"][filename] = {
+            "progress": 100,
+            "substatus": "Completed"
+        }
+
+        # Calculate overall progress across files
+        files = store["files"]
+        if files:
+            overall = sum(f.get("progress", 0) for f in files.values()) // len(files)
+            store["progress"] = overall
+            completed = sum(1 for f in files.values() if f.get("progress", 0) >= 100)
+            total = len(files)
+            store["status"] = f"Processed {completed} of {total} documents"
+            active_substatuses = [f.get("substatus", "") for f in files.values() if f.get("progress", 0) < 100]
+            store["substatus"] = active_substatuses[0] if active_substatuses else "Completed"
+        else:
+            store["progress"] = 100
+            store["status"] = "Completed"
+            store["substatus"] = "Completed"
+
         store["result"] = merged_result
+        upload_progress_store[upload_id] = store
         upload_progress_store_fs.save(upload_id, store)
     except Exception as exc:
         logger.exception("Error in background chunk process task")
-        store = upload_progress_store.get(upload_id) or {"progress": 100, "files": {}}
-        store["progress"] = 100
-        store["status"] = "Failed"
-        store["substatus"] = str(exc)
-        store["result"] = {
+        store = upload_progress_store_fs.get(upload_id) or upload_progress_store.get(upload_id) or {
+            "progress": 100,
+            "status": "Failed",
+            "substatus": str(exc),
+            "files": {}
+        }
+        if "files" not in store:
+            store["files"] = {}
+        store["files"][filename] = {
+            "progress": 100,
+            "substatus": f"Failed: {exc}"
+        }
+
+        existing_result = store.get("result") or {
             "processed": 0,
             "recommendations": [],
             "pendingDuplicates": [],
-            "errors": [f"Processing failed: {exc}"],
+            "errors": []
         }
+        
+        merged_result = {
+            "processed": existing_result.get("processed", 0),
+            "recommendations": existing_result.get("recommendations", []),
+            "pendingDuplicates": existing_result.get("pendingDuplicates", []),
+            "errors": existing_result.get("errors", []) + [f"{filename}: processing failed — {exc}"],
+        }
+
+        # Calculate overall progress across files
+        files = store["files"]
+        if files:
+            overall = sum(f.get("progress", 0) for f in files.values()) // len(files)
+            store["progress"] = overall
+            completed = sum(1 for f in files.values() if f.get("progress", 0) >= 100)
+            total = len(files)
+            store["status"] = f"Processed {completed} of {total} documents"
+            active_substatuses = [f.get("substatus", "") for f in files.values() if f.get("progress", 0) < 100]
+            store["substatus"] = active_substatuses[0] if active_substatuses else "Failed"
+        else:
+            store["progress"] = 100
+            store["status"] = "Failed"
+            store["substatus"] = str(exc)
+
+        store["result"] = merged_result
+        upload_progress_store[upload_id] = store
         upload_progress_store_fs.save(upload_id, store)
 
 

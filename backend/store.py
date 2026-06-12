@@ -361,7 +361,6 @@ class UploadProgressStore:
             self.temp_dir.mkdir(parents=True, exist_ok=True)
         except Exception as e:
             logging.error(f"Failed to create temp directory for upload progress: {e}")
-        self._memory: dict[str, dict] = {}
 
     def _get_path(self, upload_id: str) -> Path:
         # Sanitize upload_id to prevent path traversal
@@ -369,22 +368,15 @@ class UploadProgressStore:
         return self.temp_dir / f"{safe_id}.json"
 
     def get(self, upload_id: str) -> dict | None:
-        # Check memory first for speed
-        if upload_id in self._memory:
-            return self._memory[upload_id]
-            
         path = self._get_path(upload_id)
         if path.exists():
             try:
-                data = json.loads(path.read_text(encoding="utf-8"))
-                self._memory[upload_id] = data
-                return data
+                return json.loads(path.read_text(encoding="utf-8"))
             except Exception as e:
                 logging.error(f"Error reading upload progress file: {e}")
         return None
 
     def save(self, upload_id: str, data: dict) -> None:
-        self._memory[upload_id] = data
         path = self._get_path(upload_id)
         try:
             path.write_text(json.dumps(data), encoding="utf-8")
@@ -392,7 +384,6 @@ class UploadProgressStore:
             logging.error(f"Error writing upload progress file: {e}")
 
     def delete(self, upload_id: str) -> None:
-        self._memory.pop(upload_id, None)
         path = self._get_path(upload_id)
         if path.exists():
             try:
