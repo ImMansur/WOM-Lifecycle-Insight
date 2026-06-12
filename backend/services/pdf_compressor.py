@@ -46,13 +46,22 @@ def compress_pdf_bytes(file_bytes: bytes, filename: str) -> tuple[bytes, int]:
                 break
 
         if has_images:
-            # Recompress/downscale images to 150 DPI and 75% quality (iLovePDF "Recommended Compression")
-            doc.rewrite_images(
-                dpi_threshold=150,
-                dpi_target=120,
-                quality=75,
-                lossy=True
-            )
+            import os
+            enable_advanced = os.environ.get("ENABLE_ADVANCED_PDF_COMPRESSION", "false").lower() == "true"
+            if enable_advanced:
+                try:
+                    # Recompress/downscale images to 150 DPI and 75% quality (iLovePDF "Recommended Compression")
+                    doc.rewrite_images(
+                        dpi_threshold=150,
+                        dpi_target=120,
+                        quality=75,
+                        lossy=True
+                    )
+                except Exception as e:
+                    logger.warning("Advanced image rewrite failed: %s. Continuing with structural compression.", e)
+            else:
+                logger.info("Advanced image rewrite is disabled by default to prevent segmentation faults. Using structural compression.")
+
 
         # Save to memory buffer with garbage collection and stream compression
         # garbage=3 removes unused objects, deflate=True compresses streams, use_objstms=True optimizes objects
